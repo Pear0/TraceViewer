@@ -135,7 +135,7 @@ QList<QString> TraceViewWindow::generateFunctionStack(const TraceEvent &event) {
 
   for (auto it = event.frames.crbegin(); it != event.frames.crend(); ++it) {
     auto &frame = *it;
-    if (debug_info) {
+    if (debug_info && frame.pc >= 0x1000) {
       auto funcs = debug_info.value()->resolve_address(frame.pc);
       if (funcs) {
         auto &[main_func, inlines] = *funcs;

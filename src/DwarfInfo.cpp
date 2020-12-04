@@ -6,10 +6,13 @@
 #include <vector>
 #include <unordered_map>
 #include <unordered_set>
+#include <fcntl.h>
 
 #include "DwarfInfo.h"
 #include "libdwarf.h"
 #include "dwarf.h"
+#include "libelf/libelf.h"
+#include "libelf/gelf.h"
 
 namespace {
 
@@ -155,23 +158,9 @@ struct CompilationUnitInfo {
 #define TRUE 1
 #define FALSE 0
 
+#define NT_GNU_BUILD_ID 3
+
 #define UNUSEDARG __attribute__((unused))
-
-static int look_for_our_target(Dwarf_Debug dbg,
-                               struct target_data_s *target_data,
-                               Dwarf_Error *errp);
-
-static int examine_die_data(Dwarf_Debug dbg,
-                            int is_info, Dwarf_Die die,
-                            int level, struct target_data_s *td, Dwarf_Error *errp);
-
-static int check_comp_dir(Dwarf_Debug dbg, Dwarf_Die die,
-                          int level, struct target_data_s *td, Dwarf_Error *errp);
-
-static int get_die_and_siblings(Dwarf_Debug dbg,
-                                Dwarf_Die in_die,
-                                int is_info, int in_level, int cu_number,
-                                struct target_data_s *td, Dwarf_Error *errp);
 
 static int
 get_name_from_abstract_origin(Dwarf_Debug dbg,
@@ -189,12 +178,6 @@ getlowhighpc(UNUSEDARG Dwarf_Debug dbg,
              Dwarf_Addr *lowpc_out,
              Dwarf_Addr *highpc_out,
              Dwarf_Error *error);
-
-static int unittype = DW_UT_compile;
-static Dwarf_Bool g_is_info = TRUE;
-
-int cu_version_stamp = 0;
-int cu_offset_size = 0;
 
 
 void InlinedFunctionInfo::dump() {
@@ -257,21 +240,95 @@ static void dwarf_load_err(Dwarf_Error error, Dwarf_Ptr arg) {
   std::cout << "dwarf_load_err() called" << std::endl;
 }
 
+static size_t align_up(size_t value, size_t align) {
+  auto mod = value % align;
+  return mod ? (value - mod + align) : value;
+}
+
+
+constexpr char hexmap[] = {'0', '1', '2', '3', '4', '5', '6', '7',
+                           '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'};
+
+static std::string bytesToStr(const uint8_t *data, int len)
+{
+  std::string s(len * 2, ' ');
+  for (int i = 0; i < len; ++i) {
+    s[2 * i]     = hexmap[(data[i] & 0xF0) >> 4];
+    s[2 * i + 1] = hexmap[data[i] & 0x0F];
+  }
+  return s;
+}
+
+static std::string find_build_id(Elf *elf) {
+  Elf_Scn *scn = nullptr;
+  GElf_Shdr   shdr;
+  Elf_Data    *data;
+
+  while ((scn = elf_nextscn(elf, scn)) != NULL) {
+    gelf_getshdr(scn, &shdr);
+    if (shdr.sh_type == SHT_NOTE) {
+
+      data = elf_getdata(scn, NULL);
+      auto buf = (size_t) data->d_buf;
+      auto buf_end = buf + data->d_size;
+
+      while (buf + sizeof(Elf64_Nhdr) < buf_end) {
+        Elf64_Nhdr note = *(Elf64_Nhdr *)buf;
+        // we only care about "GNU\0" namespace
+
+        uint8_t *name = note.n_namesz == 0 ? nullptr : (uint8_t *)(buf + sizeof(note));
+
+        uint8_t *desc = note.n_namesz == 0 ? nullptr : (uint8_t *)(buf + sizeof(note) + align_up(note.n_namesz, 4));
+
+        // set buf to next note
+        buf = buf + sizeof(note) + align_up(note.n_namesz, 4) + align_up(note.n_descsz, 4);
+
+        // we overflowed, and our name and/or descriptors are not actually valid...
+        if (buf > buf_end) {
+          break;
+        }
+
+        if (note.n_namesz != 4 || memcmp(name, "GNU\0", 4) != 0) {
+          continue;
+        }
+
+        if (note.n_type != NT_GNU_BUILD_ID) {
+          continue;
+        }
+
+        return bytesToStr(desc, note.n_descsz);
+      }
+
+    }
+  }
+
+  return std::string();
+}
+
 Result<DwarfInfo, std::string> DwarfInfo::load_file(const char *file_name) {
+  int fd = open(file_name, O_RDONLY);
+  if (fd < 0) {
+    std::string msg("error: ");
+    msg += std::to_string(fd);
+    return Result<DwarfInfo, std::string>::with_error(msg);
+  }
+
+  elf_version(EV_CURRENT);
+
+  auto *elf = elf_begin(fd, ELF_C_READ, nullptr);
+  if (auto no = elf_errno(); no) {
+    return Result<DwarfInfo, std::string>::with_error(std::string(elf_errmsg(no)));
+  }
+
+  find_build_id(elf);
+
   std::vector<char> path_buffer;
   path_buffer.resize(4096);
 
   Dwarf_Error error;
   Dwarf_Debug debug_info;
 
-  auto dwarf_err = dwarf_init_path(
-          file_name,
-          path_buffer.data(), path_buffer.size(), 0, DW_GROUPNUMBER_ANY,
-          nullptr, nullptr,
-          &debug_info,
-          nullptr, 0, nullptr,
-          &error
-  );
+  auto dwarf_err = dwarf_elf_init(elf, 0, nullptr, nullptr, &debug_info, &error);
 
   switch (dwarf_err) {
     case DW_DLV_OK:

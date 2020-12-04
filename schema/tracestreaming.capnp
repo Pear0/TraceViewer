@@ -1,0 +1,1 @@
+../../cs3210-rustos/lib/tracing/schema/tracestreaming.capnp

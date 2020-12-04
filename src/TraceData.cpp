@@ -4,25 +4,13 @@
 
 #include <cstdio>
 #include <iostream>
+
+#include <capnp/message.h>
+#include <capnp/serialize-packed.h>
+#include <kj/io.h>
+
 #include "TraceData.h"
-
-/* all values little endian
- *
- * Packet:
- *    MAGIC - 4 bytes
- *    VERSION - 2 bytes
- *    num_events - 2 bytes
- *    EVENTS:                                  | events may or may not be ordered by timestamp
- *      timestamp - 8 bytes in nanoseconds
- *      event_index - 8 bytes
- *      num_frames - 2 bytes
- *      FRAMES:                                | the "topmost"/"current" frame is first
- *        pc - 8 bytes
- *
- */
-
-#define MAGIC 0x54445254
-#define VERSION 1
+#include "schema/tracestreaming.capnp.h"
 
 TraceData::TraceData(const TraceData &other) : events(), change_count(0) {
   const std::lock_guard<std::mutex> g(lock);
@@ -54,52 +42,22 @@ void TraceData::parse(uint8_t *data, size_t len) {
     return;
   }
 
-  uint8_t *data_end = data + len;
+  kj::ArrayInputStream dataStream(kj::ArrayPtr(data, len));
+  capnp::PackedMessageReader reader(dataStream);
 
-  uint32_t magic = *(uint32_t *)(data);
-  uint16_t version = *(uint16_t *)(data + 4);
-  uint16_t num_events = *(uint16_t *)(data + 6);
+  net_trace::TraceGroup::Reader root = reader.getRoot<net_trace::TraceGroup>();
+  std::cout << "build id: " << root.getBuildId() << "\n";
 
-  if (magic != MAGIC) {
-    std::cout << "discarding bad magic 0x" << std::hex << magic << std::dec << std::endl;
-    return;
-  }
-
-  if (version != VERSION) {
-    std::cout << "unknown version number = " << version << std::endl;
-    return;
-  }
-
-  std::cout << "num_events = " << num_events << std::endl;
-
-  data += 8; // pointer at start of events
-
-  for (uint16_t event_i = 0; event_i < num_events; event_i++) {
+  auto events = root.getEvents();
+  for (auto it = events.begin(); it != events.end(); ++it) {
     TraceEvent event{};
+    event.nanoseconds = it->getTimestamp();
+    event.event_index = it->getEventIndex();
 
-    if (data_end - data < 18) {
-      std::cout << "parse error during event_i = " << event_i << std::endl;
-      return;
-    }
-
-    event.nanoseconds = *(uint64_t *)(data);
-    event.event_index = *(uint64_t *)(data + 8);
-    uint16_t num_frames = *(uint16_t *)(data + 16);
-
-    std::cout << "num_frames = " << num_frames << std::endl;
-
-    data += 18; // point to frames
-
-    for (uint16_t frame_i = 0; frame_i < num_frames; frame_i++) {
+    auto frames = it->getFrames();
+    for (auto it2 = frames.begin(); it2 != frames.end(); ++it2) {
       TraceFrame frame{};
-
-      if (data_end - data < 8) {
-        std::cout << "parse error during event_i = " << event_i << ", frame_i = " << frame_i << std::endl;
-        return;
-      }
-
-      frame.pc = *(uint64_t *)(data);
-      data += 8;
+      frame.pc = it2->getPc();
 
       event.frames.push_back(frame);
     }

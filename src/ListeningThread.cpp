@@ -6,6 +6,8 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
+#include "capnp/message.h"
+
 #include "ListeningThread.h"
 
 #define PORT 4000
