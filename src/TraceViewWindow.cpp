@@ -1,12 +1,16 @@
 //
-// Created by Will Gulian on 11/27/20.
+// Created by Will Gulian on 12/4/20.
 //
 
-#include <iostream>
-
-#include <QGridLayout>
-#include <QTimer>
 #include "TraceViewWindow.h"
+#include "DebugTable.h"
+
+#include <QAction>
+#include <QMenuBar>
+#include <QTimer>
+#include <QThread>
+#include <QGridLayout>
+
 
 class FrameItem : public QTreeWidgetItem {
 public:
@@ -33,26 +37,41 @@ public:
 
 };
 
+
 TraceViewWindow::TraceViewWindow(std::shared_ptr<TraceData> trace_data,
-                                 std::optional<std::shared_ptr<DwarfInfo>> debug_info)
-        : QWidget(), trace_data(std::move(trace_data)), debug_info(std::move(debug_info)),
-          updateTimer(new QTimer(this)), fileWatcher(new QFileSystemWatcher(this)),
-          treeWidget(new QTreeWidget()) {
-  setContentsMargins(0, 0, 0, 0);
+                                 std::shared_ptr<DebugTable> debugTable)
+        : QMainWindow(), trace_data(std::move(trace_data)), debugTable(debugTable) {
+  auto *widget = new QWidget;
+  setCentralWidget(widget);
 
+  updateTimer = new QTimer(this);
   updateTimer->setInterval(1000);
-  connect(updateTimer, &QTimer::timeout, this, &TraceViewWindow::updateTimerHit);
 
-  connect(fileWatcher, &QFileSystemWatcher::fileChanged, this, &TraceViewWindow::onFileChanged);
+  fileWatcher = new QFileSystemWatcher(this);
 
+  treeWidget = new QTreeWidget(this);
   treeWidget->setColumnCount(2);
+
+  fileLoaderThread = new QThread(this);
+  fileLoaderThread->start();
+
+
+  fileLoader = new FileLoader(std::move(debugTable));
+  fileLoader->moveToThread(fileLoaderThread);
+
+  connect(updateTimer, &QTimer::timeout, this, &TraceViewWindow::updateTimerHit);
+  connect(fileWatcher, &QFileSystemWatcher::fileChanged, this, &TraceViewWindow::onFileChanged);
+  connect(fileWatcher, &QFileSystemWatcher::fileChanged, fileLoader, &FileLoader::loadFile);
+  connect(fileLoader, &FileLoader::fileLoaded, this, &TraceViewWindow::fileLoaded);
+
 
   auto *mainLayout = new QGridLayout;
 
   mainLayout->addWidget(treeWidget);
 
-  setLayout(mainLayout);
+  widget->setLayout(mainLayout);
 
+  createMenus();
 
   updateTimer->start();
 }
@@ -100,15 +119,21 @@ static void mergeFooBar(QTreeWidget *widget, QList<QTreeWidgetItem *> &topItems,
 }
 
 void TraceViewWindow::updateTimerHit() {
+  if (!autoReloadTracesAct->isChecked()) {
+    return;
+  }
 
   TraceData data(*trace_data);
 
   // not locked access
   if (last_trace_change == data.change_count) {
-    std::cout << "no change" << std::endl;
     return;
   }
 
+  performReload(data);
+}
+
+void TraceViewWindow::performReload(const TraceData &data) {
   QList<QTreeWidgetItem *> topItems;
 
   std::cout << "change: " << data.events.size() << " events - " << data.change_count << " != " << last_trace_change
@@ -133,10 +158,13 @@ QList<QString> TraceViewWindow::generateFunctionStack(const TraceEvent &event) {
   QList<QString> list;
 //  list.push_back("main");
 
+  std::lock_guard<std::mutex> _guard(debugTable->lock);
+
   for (auto it = event.frames.crbegin(); it != event.frames.crend(); ++it) {
     auto &frame = *it;
-    if (debug_info && frame.pc >= 0x1000) {
-      auto funcs = debug_info.value()->resolve_address(frame.pc);
+    auto dwarfInfo = debugTable->loadedFiles.find(event.build_id);
+    if (dwarfInfo != debugTable->loadedFiles.end() && frame.pc >= 0x1000) {
+      auto funcs = dwarfInfo->second.resolve_address(frame.pc);
       if (funcs) {
         auto &[main_func, inlines] = *funcs;
         list.push_back(main_func->full_name);
@@ -177,4 +205,38 @@ QList<QString> TraceViewWindow::generateFunctionStack(const TraceEvent &event) {
   return list;
 }
 
+void TraceViewWindow::createMenus() {
+
+  reloadTracesAct = new QAction("Reload Traces", this);
+  reloadTracesAct->setShortcuts(QKeySequence::Refresh);
+
+  connect(reloadTracesAct, &QAction::triggered, this, &TraceViewWindow::reloadTraces);
+
+  autoReloadTracesAct = new QAction("Auto Reload Traces", this);
+  autoReloadTracesAct->setCheckable(true);
+
+  auto *viewMenu = menuBar()->addMenu("View");
+  viewMenu->addAction(reloadTracesAct);
+  viewMenu->addAction(autoReloadTracesAct);
+
+}
+
+void TraceViewWindow::reloadTraces() {
+  std::cout << "reload" << std::endl;
+
+  TraceData data(*trace_data);
+  performReload(data);
+
+  // debugTable->loadFile("/Users/will/Work/Pear0/cs3210-rustos/kern/build/kernel.elf", true);
+
+}
+
+void TraceViewWindow::fileLoaded(QString path) {
+  std::cout << "reloaded " << path.toStdString() << std::endl;
+
+  TraceData data(*trace_data);
+  performReload(data);
+
+
+}
 

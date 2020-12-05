@@ -36,6 +36,10 @@ public:
     return var.index() == 0;
   }
 
+  bool is_error() {
+    return !is_ok();
+  }
+
   T &as_value() {
     return std::get<0>(var);
   }

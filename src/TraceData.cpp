@@ -52,6 +52,7 @@ void TraceData::parse(uint8_t *data, size_t len) {
   for (auto it = events.begin(); it != events.end(); ++it) {
     TraceEvent event{};
     event.nanoseconds = it->getTimestamp();
+    event.build_id = root.getBuildId();
     event.event_index = it->getEventIndex();
 
     auto frames = it->getFrames();

@@ -14,6 +14,7 @@ struct TraceFrame {
 
 struct TraceEvent {
   uint64_t nanoseconds;
+  uint64_t build_id;
   uint64_t event_index;
   std::vector<TraceFrame> frames;
 };

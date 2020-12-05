@@ -13,23 +13,25 @@ extern "C" {
 #include "DwarfInfo.h"
 
 
-void DebugTable::foo() {
+QString DebugTable::loadFile(const QString &file, bool replace) {
 
-  const char *file_name = "/Users/will/Work/Pear0/cs3210-rustos/kern/build/kernel.elf";
-
-  auto v = DwarfInfo::load_file(file_name);
-
-  if (v.is_ok()) {
-    std::cout << "loaded!" << std::endl;
-
-    v.as_value().bruh();
-
-    std::cout << "done!" << std::endl;
-
-
-  } else {
-    std::cout << "error: " << v.as_error() << std::endl;
+  auto loader = DwarfLoader::openFile(file.toUtf8().data());
+  if (loader.is_error()) {
+    return loader.as_error();
   }
 
+  auto buildId = loader.as_value().getBuildId();
+  if (!replace && hasBuildId(buildId)) {
+    return QString();
+  }
 
+  auto loaded = loader.as_value().load();
+  if (loaded.is_error()) {
+    return loaded.as_error();
+  }
+
+  std::lock_guard<std::mutex> _guard(lock);
+  loadedFiles.insert({ buildId, std::move(loaded).into_value() });
+
+  return QString();
 }

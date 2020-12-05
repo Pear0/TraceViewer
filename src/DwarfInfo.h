@@ -44,31 +44,45 @@ struct FunctionInfo {
   void dump();
 };
 
-
 class DwarfInfo {
-  Dwarf_Debug debug_info;
-  Dwarf_Error error;
-
+  std::vector<uint8_t> buildId;
   std::vector<std::unique_ptr<FunctionInfo>> functions;
 
 public:
-  static Result<DwarfInfo, std::string> load_file(const char *file_name);
+  explicit DwarfInfo(std::vector<uint8_t> &&buildId, std::vector<std::unique_ptr<FunctionInfo>> &&functions)
+          : buildId(std::move(buildId)), functions(std::move(functions)) {}
 
-  explicit DwarfInfo(Dwarf_Debug debug) : debug_info(debug), error(nullptr) {}
   explicit DwarfInfo(const DwarfInfo &other) = delete;
-  explicit DwarfInfo(DwarfInfo &&other) = default;
-  virtual ~DwarfInfo();
 
-  void bruh();
+  DwarfInfo(DwarfInfo &&other) = default;
+
+  virtual ~DwarfInfo();
 
   std::optional<std::pair<FunctionInfo *, std::vector<InlinedFunctionInfo *>>> resolve_address(uint64_t address);
 
   std::pair<QString, bool> symbolicate(uint64_t address);
 
-  QString handle_error(Dwarf_Error error);
+  uint64_t getBuildId();
+
 private:
 
-  Result<int, QString> scan_debug_info();
+};
+
+struct DwarfLoader {
+  int fd;
+  Elf *elf;
+  std::vector<uint8_t> buildId;
+
+  static Result<DwarfLoader, QString> openFile(const char *file);
+
+  DwarfLoader(int fd, Elf *elf, std::vector<uint8_t> buildId)
+          : fd(fd), elf(elf), buildId(std::move(buildId)) {}
+
+  virtual ~DwarfLoader();
+
+  uint64_t getBuildId();
+
+  Result<DwarfInfo, QString> load();
 
 };
 

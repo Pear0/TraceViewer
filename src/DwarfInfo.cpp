@@ -7,6 +7,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <fcntl.h>
+#include <unistd.h>
 
 #include "DwarfInfo.h"
 #include "libdwarf.h"
@@ -227,8 +228,6 @@ void FunctionInfo::dump() {
 
 
 DwarfInfo::~DwarfInfo() {
-  if (!debug_info)
-    return;
 
 //  int res = dwarf_finish(debug_info, &error);
 //  if (res != DW_DLV_OK) {
@@ -259,7 +258,7 @@ static std::string bytesToStr(const uint8_t *data, int len)
   return s;
 }
 
-static std::string find_build_id(Elf *elf) {
+static std::vector<uint8_t> find_build_id(Elf *elf) {
   Elf_Scn *scn = nullptr;
   GElf_Shdr   shdr;
   Elf_Data    *data;
@@ -296,80 +295,17 @@ static std::string find_build_id(Elf *elf) {
           continue;
         }
 
-        return bytesToStr(desc, note.n_descsz);
+        std::vector<uint8_t> vec;
+        vec.reserve(note.n_descsz);
+        for (size_t i = 0; i < note.n_descsz; i++)
+          vec.push_back(desc[i]);
+        return std::move(vec);
       }
 
     }
   }
 
-  return std::string();
-}
-
-Result<DwarfInfo, std::string> DwarfInfo::load_file(const char *file_name) {
-  int fd = open(file_name, O_RDONLY);
-  if (fd < 0) {
-    std::string msg("error: ");
-    msg += std::to_string(fd);
-    return Result<DwarfInfo, std::string>::with_error(msg);
-  }
-
-  elf_version(EV_CURRENT);
-
-  auto *elf = elf_begin(fd, ELF_C_READ, nullptr);
-  if (auto no = elf_errno(); no) {
-    return Result<DwarfInfo, std::string>::with_error(std::string(elf_errmsg(no)));
-  }
-
-  find_build_id(elf);
-
-  std::vector<char> path_buffer;
-  path_buffer.resize(4096);
-
-  Dwarf_Error error;
-  Dwarf_Debug debug_info;
-
-  auto dwarf_err = dwarf_elf_init(elf, 0, nullptr, nullptr, &debug_info, &error);
-
-  switch (dwarf_err) {
-    case DW_DLV_OK:
-      return Result<DwarfInfo, std::string>::with_value(DwarfInfo(debug_info));
-    case DW_DLV_NO_ENTRY: {
-      std::string msg;
-      msg += "file not found: ";
-      msg += file_name;
-      return Result<DwarfInfo, std::string>::with_error(msg);
-    }
-    case DW_DLV_ERROR: {
-      std::string msg;
-      msg += "error loading file: ";
-      msg += file_name;
-      msg += " - ";
-      msg += std::to_string(dwarf_errno(error));
-      msg += ", ";
-      msg += dwarf_errmsg(error);
-      dwarf_dealloc_error(debug_info, error);
-      return Result<DwarfInfo, std::string>::with_error(msg);
-    }
-    default: {
-      std::string msg;
-      msg += "error loading file: ";
-      msg += file_name;
-      msg += " - ";
-      msg += "unknown dwarf_init_path() error code = ";
-      msg += std::to_string(dwarf_err);
-      dwarf_dealloc_error(debug_info, error);
-      return Result<DwarfInfo, std::string>::with_error(msg);
-    }
-  }
-}
-
-void DwarfInfo::bruh() {
-
-  auto v2 = scan_debug_info();
-  if (!v2.is_ok()) {
-    std::cout << "error: " << v2.as_error().data() << std::endl;
-  }
-
+  return std::vector<uint8_t>();
 }
 
 std::optional<std::pair<FunctionInfo *, std::vector<InlinedFunctionInfo *>>>
@@ -423,7 +359,7 @@ std::pair<QString, bool> DwarfInfo::symbolicate(uint64_t address) {
   return std::make_pair(name, false);
 }
 
-QString DwarfInfo::handle_error(Dwarf_Error error) {
+static QString handle_error(Dwarf_Debug debug_info, Dwarf_Error error) {
   QString msg;
   msg += "error ";
   msg += QString::number(dwarf_errno(error));
@@ -433,9 +369,7 @@ QString DwarfInfo::handle_error(Dwarf_Error error) {
   return std::move(msg);
 }
 
-#define TRY_ERROR(type, res, error) do {if ((res) == DW_DLV_ERROR)return Result<type, QString>::with_error(handle_error(error));}while(0)
-
-#define TRY_ERROR_STATIC(type, dwarfInfo, res, error) do {if ((res) == DW_DLV_ERROR)return Result<type, QString>::with_error((dwarfInfo).handle_error(error));}while(0)
+#define TRY_ERROR(type, debugInfo, res, error) do {if ((res) == DW_DLV_ERROR)return Result<type, QString>::with_error(handle_error(debugInfo, error));}while(0)
 
 
 struct DieWalkInfo {
@@ -449,7 +383,7 @@ struct DieWalkInfo {
 
 template<typename Func>
 static Result<int, QString>
-doThing(DwarfInfo &dwarfInfo, DieWalkInfo &info, Dwarf_Die die, Func func, int level = 0, int sibling_index = 0) {
+doThing(Dwarf_Debug debugInfo, DieWalkInfo &info, Dwarf_Die die, Func func, int level = 0, int sibling_index = 0) {
   info.level = level;
   info.sibling_index = sibling_index;
   func(info, die, false);
@@ -457,9 +391,9 @@ doThing(DwarfInfo &dwarfInfo, DieWalkInfo &info, Dwarf_Die die, Func func, int l
   Dwarf_Die child_die;
   Dwarf_Error error;
   int res = dwarf_child(die, &child_die, &error);
-  TRY_ERROR_STATIC(int, dwarfInfo, res, error);
+  TRY_ERROR(int, debugInfo, res, error);
   if (res == DW_DLV_OK) {
-    auto result = doThing(dwarfInfo, info, child_die, func, level + 1, 0);
+    auto result = doThing(debugInfo, info, child_die, func, level + 1, 0);
 
     dwarf_dealloc_die(child_die);
     child_die = nullptr;
@@ -478,7 +412,7 @@ doThing(DwarfInfo &dwarfInfo, DieWalkInfo &info, Dwarf_Die die, Func func, int l
     for (int i = 1;; i++) {
       Dwarf_Die next_die;
       res = dwarf_siblingof_b(info.debug_info, die, info.is_info, &next_die, &error);
-      TRY_ERROR_STATIC(int, dwarfInfo, res, error);
+      TRY_ERROR(int, debugInfo, res, error);
       if (res == DW_DLV_NO_ENTRY)
         break;
 
@@ -490,7 +424,7 @@ doThing(DwarfInfo &dwarfInfo, DieWalkInfo &info, Dwarf_Die die, Func func, int l
       die = next_die;
       our_die = true;
 
-      auto result = doThing(dwarfInfo, info, die, func, level, i);
+      auto result = doThing(debugInfo, info, die, func, level, i);
 
       if (!result.is_ok()) {
         return std::move(result);
@@ -594,12 +528,13 @@ build_ranges(Dwarf_Debug debug_info, CompilationUnitInfo &cu_info, Dwarf_Die die
   }
 }
 
-Result<int, QString> DwarfInfo::scan_debug_info() {
+static Result<std::vector<std::unique_ptr<FunctionInfo>>, QString> scan_debug_info(Dwarf_Debug debug_info) {
   CompilationUnitHeader header{};
   bool is_info = true;
   constexpr auto dump_tags = false;
 
   std::vector<std::unique_ptr<FunctionInfo>> functions;
+  Dwarf_Error error;
 
   for (int cu_index = 0;; cu_index++) {
     // iterate through the compilation units...
@@ -610,14 +545,14 @@ Result<int, QString> DwarfInfo::scan_debug_info() {
             &header.abbrev_offset, &header.address_size, &header.offset_size,
             &header.extension_size, &header.signature, &header.type_offset,
             &header.next_cu_header, &header.header_cu_type, &error);
-    TRY_ERROR(int, res, error);
+    TRY_ERROR(std::vector<std::unique_ptr<FunctionInfo>>, debug_info, res, error);
 
     if (res == DW_DLV_NO_ENTRY)
       break; // no more entries, exit.
 
     Dwarf_Die cu_die;
     res = dwarf_siblingof_b(debug_info, nullptr, is_info, &cu_die, &error);
-    TRY_ERROR(int, res, error);
+    TRY_ERROR(std::vector<std::unique_ptr<FunctionInfo>>, debug_info, res, error);
     if (res == DW_DLV_NO_ENTRY)
       continue;
 
@@ -661,7 +596,7 @@ Result<int, QString> DwarfInfo::scan_debug_info() {
     walkInfo.is_info = is_info;
 
     if (dump_tags) {
-      doThing(*this, walkInfo, cu_die, [&](DieWalkInfo &info, Dwarf_Die die, bool is_exit) {
+      doThing(debug_info, walkInfo, cu_die, [&](DieWalkInfo &info, Dwarf_Die die, bool is_exit) {
         Dwarf_Error err;
 
         Dwarf_Off offset;
@@ -722,7 +657,7 @@ Result<int, QString> DwarfInfo::scan_debug_info() {
       });
     }
 
-    doThing(*this, walkInfo, cu_die, [&](DieWalkInfo &info, Dwarf_Die die, bool is_exit) {
+    doThing(debug_info, walkInfo, cu_die, [&](DieWalkInfo &info, Dwarf_Die die, bool is_exit) {
       Dwarf_Error err;
 
       Dwarf_Off offset;
@@ -925,10 +860,92 @@ Result<int, QString> DwarfInfo::scan_debug_info() {
 //    func->dump();
 //  }
 
-  this->functions = std::move(functions);
-
-  return Result<int, QString>::with_value(0);
+  return Result<std::vector<std::unique_ptr<FunctionInfo>>, QString>::with_value(std::move(functions));
 }
+
+Result<DwarfLoader, QString> DwarfLoader::openFile(const char *file) {
+  int fd = open(file, O_RDONLY);
+  if (fd < 0) {
+    QString msg("error: ");
+    msg += QString::number(fd);
+    return Result<DwarfLoader, QString>::with_error(msg);
+  }
+
+  elf_version(EV_CURRENT);
+
+  auto *elf = elf_begin(fd, ELF_C_READ, nullptr);
+  if (auto no = elf_errno(); no) {
+    return Result<DwarfLoader, QString>::with_error(QString(elf_errmsg(no)));
+  }
+
+  auto buildId = find_build_id(elf);
+
+  return Result<DwarfLoader, QString>::with_value(DwarfLoader { fd, elf, std::move(buildId) });
+}
+
+uint64_t DwarfLoader::getBuildId() {
+  uint64_t num = 0;
+  for (size_t i = 0; i < 8 && i < buildId.size(); i++) {
+    num |= static_cast<uint64_t>(buildId[i]) << (i * 8);
+  }
+  return num;
+}
+
+DwarfLoader::~DwarfLoader() {
+// TODO cleanup dwarf
+
+  if (fd >= 0) {
+    close(fd);
+    fd = -1;
+  }
+}
+
+Result<DwarfInfo, QString> DwarfLoader::load() {
+  Dwarf_Error error;
+  Dwarf_Debug debug_info;
+
+  auto dwarf_err = dwarf_elf_init(elf, 0, nullptr, nullptr, &debug_info, &error);
+
+  switch (dwarf_err) {
+    case DW_DLV_OK: {
+
+      auto functions = scan_debug_info(debug_info);
+      if (functions.is_error()) {
+        return Result<DwarfInfo, QString>::with_error(std::move(functions).into_error());
+      }
+
+      return Result<DwarfInfo, QString>::with_value(DwarfInfo(std::move(buildId), std::move(functions).into_value()));
+    }
+    case DW_DLV_NO_ENTRY: {
+      QString msg("no_entry");
+      return Result<DwarfInfo, QString>::with_error(msg);
+    }
+    case DW_DLV_ERROR: {
+      QString msg;
+      msg += QString::number(dwarf_errno(error));
+      msg += ", ";
+      msg += dwarf_errmsg(error);
+      dwarf_dealloc_error(debug_info, error);
+      return Result<DwarfInfo, QString>::with_error(msg);
+    }
+    default: {
+      QString msg;
+      msg += "unknown dwarf_elf_init() error code = ";
+      msg += QString::number(dwarf_err);
+      dwarf_dealloc_error(debug_info, error);
+      return Result<DwarfInfo, QString>::with_error(msg);
+    }
+  }
+}
+
+uint64_t DwarfInfo::getBuildId() {
+  uint64_t num = 0;
+  for (size_t i = 0; i < 8 && i < buildId.size(); i++) {
+    num |= static_cast<uint64_t>(buildId[i]) << (i * 8);
+  }
+  return num;
+}
+
 
 static int
 read_line_data(UNUSEDARG Dwarf_Debug dbg,
@@ -1246,6 +1263,5 @@ get_name_from_abstract_origin(Dwarf_Debug dbg,
   }
   return res;
 }
-
 
 

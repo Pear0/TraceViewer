@@ -1,38 +1,54 @@
 //
-// Created by Will Gulian on 11/27/20.
+// Created by Will Gulian on 12/4/20.
 //
 
 #ifndef TRACEVIEWER2_TRACEVIEWWINDOW_H
 #define TRACEVIEWER2_TRACEVIEWWINDOW_H
 
 #include <unordered_map>
-#include <QApplication>
-#include <QFileSystemWatcher>
-#include <QWidget>
+
+#include <QMainWindow>
 #include <QTreeWidget>
+#include <QFileSystemWatcher>
+
 #include "TraceData.h"
 #include "DwarfInfo.h"
+#include "DebugTable.h"
+#include "FileLoader.h"
 
-class TraceViewWindow : public QWidget {
+class TraceViewWindow : public QMainWindow {
   Q_OBJECT
 
   std::shared_ptr<TraceData> trace_data;
-  std::optional<std::shared_ptr<DwarfInfo>> debug_info;
-  QTimer *updateTimer;
-  QTreeWidget *treeWidget;
+  std::shared_ptr<DebugTable> debugTable;
+
+  QTimer *updateTimer = nullptr;
+  QTreeWidget *treeWidget = nullptr;
+  FileLoader *fileLoader = nullptr;
+  QThread *fileLoaderThread = nullptr;
+  QAction *reloadTracesAct = nullptr;
+  QAction *autoReloadTracesAct = nullptr;
 
   uint64_t last_trace_change = 0;
-  std::unordered_map<uint64_t, QString> symbolication_cache{};
 public:
   QFileSystemWatcher *fileWatcher;
 
-  explicit TraceViewWindow(std::shared_ptr<TraceData> trace_data, std::optional<std::shared_ptr<DwarfInfo>> debug_info);
+  explicit TraceViewWindow(std::shared_ptr<TraceData> trace_data, std::shared_ptr<DebugTable> debugTable);
 
+private slots:
   void updateTimerHit();
   void onFileChanged(const QString &path);
+  void reloadTraces();
+
+  void fileLoaded(QString path);
 
 private:
+  void performReload(const TraceData &data);
+
+  void createMenus();
+
   QList<QString> generateFunctionStack(const TraceEvent &event);
+
 
 };
 
