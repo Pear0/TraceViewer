@@ -7,40 +7,60 @@
 
 #include <unordered_map>
 
-#include <QMainWindow>
-#include <QTreeWidget>
+#include <QAction>
+#include <QActionGroup>
 #include <QFileSystemWatcher>
+#include <QMainWindow>
+#include <QTimer>
+#include <QTreeWidget>
 
 #include "TraceData.h"
 #include "DwarfInfo.h"
 #include "DebugTable.h"
 #include "FileLoader.h"
+#include "CustomTraceDialog.h"
 
 class TraceViewWindow : public QMainWindow {
-  Q_OBJECT
-
-  std::shared_ptr<TraceData> trace_data;
-  std::shared_ptr<DebugTable> debugTable;
+Q_OBJECT
 
   QTimer *updateTimer = nullptr;
   QTreeWidget *treeWidget = nullptr;
   FileLoader *fileLoader = nullptr;
   QThread *fileLoaderThread = nullptr;
+  CustomTraceDialog *customTraceDialog = nullptr;
+
   QAction *reloadTracesAct = nullptr;
   QAction *autoReloadTracesAct = nullptr;
+  QActionGroup *traceOrderGroup = nullptr;
+  QAction *traceOrderTopDownAct = nullptr;
+  QAction *traceOrderBottomUpAct = nullptr;
+  QAction *traceShowInlinedFuncsAct = nullptr;
+  QAction *customTraceWindowAct = nullptr;
 
   uint64_t last_trace_change = 0;
 public:
+  std::shared_ptr<TraceData> trace_data;
+  std::shared_ptr<DebugTable> debugTable;
   QFileSystemWatcher *fileWatcher;
 
   explicit TraceViewWindow(std::shared_ptr<TraceData> trace_data, std::shared_ptr<DebugTable> debugTable);
 
+  void addFile(const QString &path);
+
+signals:
+  void doLoadFile(const QString &path);
+
 private slots:
+
   void updateTimerHit();
+
   void onFileChanged(const QString &path);
+
   void reloadTraces();
 
   void fileLoaded(QString path);
+
+  void openCustomTraceDialog();
 
 private:
   void performReload(const TraceData &data);

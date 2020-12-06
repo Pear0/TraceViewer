@@ -52,7 +52,7 @@ add_executable(TraceViewer2 MACOSX_BUNDLE ${CAPNP_SRCS}
         src/TraceViewWindow.cpp
         src/TraceViewWindow.h
         src/FileLoader.cpp
-        src/FileLoader.h)
+        src/FileLoader.h src/CustomTraceDialog.cpp src/CustomTraceDialog.h)
 
 target_include_directories(TraceViewer2 PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 

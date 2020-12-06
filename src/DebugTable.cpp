@@ -33,5 +33,7 @@ QString DebugTable::loadFile(const QString &file, bool replace) {
   std::lock_guard<std::mutex> _guard(lock);
   loadedFiles.insert({ buildId, std::move(loaded).into_value() });
 
+  std::cout << "loaded build id 0x" << std::hex << buildId << std::hex << "\n";
+
   return QString();
 }

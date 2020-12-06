@@ -5,6 +5,7 @@
 #ifndef TRACEVIEWER2_DWARFINFO_H
 #define TRACEVIEWER2_DWARFINFO_H
 
+#include <ctime>
 #include <iostream>
 #include <optional>
 #include <string>
@@ -49,8 +50,11 @@ class DwarfInfo {
   std::vector<std::unique_ptr<FunctionInfo>> functions;
 
 public:
-  explicit DwarfInfo(std::vector<uint8_t> &&buildId, std::vector<std::unique_ptr<FunctionInfo>> &&functions)
-          : buildId(std::move(buildId)), functions(std::move(functions)) {}
+  QString file;
+  std::time_t loaded_time;
+
+  explicit DwarfInfo(QString &&file, std::vector<uint8_t> &&buildId, std::vector<std::unique_ptr<FunctionInfo>> &&functions)
+          : file(std::move(file)), loaded_time(std::time(nullptr)), buildId(std::move(buildId)), functions(std::move(functions)) {}
 
   explicit DwarfInfo(const DwarfInfo &other) = delete;
 
@@ -72,11 +76,12 @@ struct DwarfLoader {
   int fd;
   Elf *elf;
   std::vector<uint8_t> buildId;
+  QString file;
 
-  static Result<DwarfLoader, QString> openFile(const char *file);
+  static Result<DwarfLoader, QString> openFile(const QString &file);
 
-  DwarfLoader(int fd, Elf *elf, std::vector<uint8_t> buildId)
-          : fd(fd), elf(elf), buildId(std::move(buildId)) {}
+  DwarfLoader(int fd, Elf *elf, std::vector<uint8_t> buildId, QString file)
+          : fd(fd), elf(elf), buildId(std::move(buildId)), file(std::move(file)) {}
 
   virtual ~DwarfLoader();
 

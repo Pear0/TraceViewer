@@ -62,6 +62,7 @@ TraceViewWindow::TraceViewWindow(std::shared_ptr<TraceData> trace_data,
   connect(updateTimer, &QTimer::timeout, this, &TraceViewWindow::updateTimerHit);
   connect(fileWatcher, &QFileSystemWatcher::fileChanged, this, &TraceViewWindow::onFileChanged);
   connect(fileWatcher, &QFileSystemWatcher::fileChanged, fileLoader, &FileLoader::loadFile);
+  connect(this, &TraceViewWindow::doLoadFile, fileLoader, &FileLoader::loadFile);
   connect(fileLoader, &FileLoader::fileLoaded, this, &TraceViewWindow::fileLoaded);
 
 
@@ -141,6 +142,11 @@ void TraceViewWindow::performReload(const TraceData &data) {
 
   for (auto &events : data.events) {
     auto list = generateFunctionStack(events);
+
+    if (traceOrderBottomUpAct->isChecked()) {
+      std::reverse(list.begin(), list.end());
+    }
+
     mergeFooBar(nullptr, topItems, list);
   }
 
@@ -169,11 +175,13 @@ QList<QString> TraceViewWindow::generateFunctionStack(const TraceEvent &event) {
         auto &[main_func, inlines] = *funcs;
         list.push_back(main_func->full_name);
 
-        for (auto inline_func : inlines) {
-          if (inline_func->origin_fn) {
-            QString name("~");
-            name += inline_func->origin_fn->full_name;
-            list.push_back(name);
+        if (traceShowInlinedFuncsAct->isChecked()) {
+          for (auto inline_func : inlines) {
+            if (inline_func->origin_fn) {
+              QString name("~");
+              name += inline_func->origin_fn->full_name;
+              list.push_back(name);
+            }
           }
         }
 
@@ -215,9 +223,47 @@ void TraceViewWindow::createMenus() {
   autoReloadTracesAct = new QAction("Auto Reload Traces", this);
   autoReloadTracesAct->setCheckable(true);
 
+  traceOrderGroup = new QActionGroup(this);
+  traceOrderTopDownAct = new QAction("Top Down", traceOrderGroup);
+  traceOrderTopDownAct->setShortcut(QKeySequence("Ctrl+7"));
+  traceOrderTopDownAct->setCheckable(true);
+  traceOrderTopDownAct->setChecked(true);
+  traceOrderBottomUpAct = new QAction("Bottom Up", traceOrderGroup);
+  traceOrderBottomUpAct->setShortcut(QKeySequence("Ctrl+8"));
+  traceOrderBottomUpAct->setCheckable(true);
+
+  traceShowInlinedFuncsAct = new QAction("Show Inlined Funcs", this);
+  traceShowInlinedFuncsAct->setShortcut(QKeySequence("Ctrl+I"));
+  traceShowInlinedFuncsAct->setCheckable(true);
+  traceShowInlinedFuncsAct->setChecked(true);
+
+  customTraceWindowAct = new QAction("Custom Trace", this);
+  customTraceWindowAct->setShortcut(QKeySequence("Ctrl+9"));
+
   auto *viewMenu = menuBar()->addMenu("View");
   viewMenu->addAction(reloadTracesAct);
   viewMenu->addAction(autoReloadTracesAct);
+
+  {
+    auto *orderMenu = viewMenu->addMenu("Trace Order");
+    orderMenu->addAction(traceOrderTopDownAct);
+    orderMenu->addAction(traceOrderBottomUpAct);
+  }
+
+  viewMenu->addAction(traceShowInlinedFuncsAct);
+
+  viewMenu->addSeparator();
+
+  auto *windowMenu = menuBar()->addMenu("Window");
+  windowMenu->addAction(customTraceWindowAct);
+  windowMenu->addSeparator();
+
+  // reloadTraces() inspects the current ordering, so all we need is to trigger a reload.
+  connect(traceOrderTopDownAct, &QAction::triggered, this, &TraceViewWindow::reloadTraces);
+  connect(traceOrderBottomUpAct, &QAction::triggered, this, &TraceViewWindow::reloadTraces);
+  connect(traceShowInlinedFuncsAct, &QAction::triggered, this, &TraceViewWindow::reloadTraces);
+
+  connect(customTraceWindowAct, &QAction::triggered, this, &TraceViewWindow::openCustomTraceDialog);
 
 }
 
@@ -238,5 +284,21 @@ void TraceViewWindow::fileLoaded(QString path) {
   performReload(data);
 
 
+}
+
+void TraceViewWindow::openCustomTraceDialog() {
+
+  if (!customTraceDialog) {
+    customTraceDialog = new CustomTraceDialog(this);
+  }
+
+  customTraceDialog->show();
+  customTraceDialog->raise();
+  customTraceDialog->activateWindow();
+}
+
+void TraceViewWindow::addFile(const QString &path) {
+  fileWatcher->addPath(path);
+  doLoadFile(path);
 }
 

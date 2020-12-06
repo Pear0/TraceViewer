@@ -28,7 +28,7 @@ int main(int argc, char **argv) {
   auto *foo = new TraceViewWindow(data, debugTable);
 
   QString file_path(file_name);
-  foo->fileWatcher->addPath(file_path);
+  foo->addFile(file_path);
 
   foo->resize(1280 / 2, 720);
   foo->show();

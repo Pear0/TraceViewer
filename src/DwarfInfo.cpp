@@ -248,11 +248,10 @@ static size_t align_up(size_t value, size_t align) {
 constexpr char hexmap[] = {'0', '1', '2', '3', '4', '5', '6', '7',
                            '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'};
 
-static std::string bytesToStr(const uint8_t *data, int len)
-{
+static std::string bytesToStr(const uint8_t *data, int len) {
   std::string s(len * 2, ' ');
   for (int i = 0; i < len; ++i) {
-    s[2 * i]     = hexmap[(data[i] & 0xF0) >> 4];
+    s[2 * i] = hexmap[(data[i] & 0xF0) >> 4];
     s[2 * i + 1] = hexmap[data[i] & 0x0F];
   }
   return s;
@@ -260,8 +259,8 @@ static std::string bytesToStr(const uint8_t *data, int len)
 
 static std::vector<uint8_t> find_build_id(Elf *elf) {
   Elf_Scn *scn = nullptr;
-  GElf_Shdr   shdr;
-  Elf_Data    *data;
+  GElf_Shdr shdr;
+  Elf_Data *data;
 
   while ((scn = elf_nextscn(elf, scn)) != NULL) {
     gelf_getshdr(scn, &shdr);
@@ -272,12 +271,12 @@ static std::vector<uint8_t> find_build_id(Elf *elf) {
       auto buf_end = buf + data->d_size;
 
       while (buf + sizeof(Elf64_Nhdr) < buf_end) {
-        Elf64_Nhdr note = *(Elf64_Nhdr *)buf;
+        Elf64_Nhdr note = *(Elf64_Nhdr *) buf;
         // we only care about "GNU\0" namespace
 
-        uint8_t *name = note.n_namesz == 0 ? nullptr : (uint8_t *)(buf + sizeof(note));
+        uint8_t *name = note.n_namesz == 0 ? nullptr : (uint8_t *) (buf + sizeof(note));
 
-        uint8_t *desc = note.n_namesz == 0 ? nullptr : (uint8_t *)(buf + sizeof(note) + align_up(note.n_namesz, 4));
+        uint8_t *desc = note.n_namesz == 0 ? nullptr : (uint8_t *) (buf + sizeof(note) + align_up(note.n_namesz, 4));
 
         // set buf to next note
         buf = buf + sizeof(note) + align_up(note.n_namesz, 4) + align_up(note.n_descsz, 4);
@@ -353,6 +352,12 @@ DwarfInfo::resolve_address(uint64_t address) {
 }
 
 std::pair<QString, bool> DwarfInfo::symbolicate(uint64_t address) {
+  auto funcs = resolve_address(address);
+  if (funcs) {
+    auto &[main_func, inlines] = *funcs;
+    return std::make_pair(main_func->full_name, true);
+  }
+
   std::cout << "failed to symbolicate address = 0x" << std::hex << address << std::dec << std::endl;
   QString name("0x");
   name += QString::number(address, 16);
@@ -863,8 +868,8 @@ static Result<std::vector<std::unique_ptr<FunctionInfo>>, QString> scan_debug_in
   return Result<std::vector<std::unique_ptr<FunctionInfo>>, QString>::with_value(std::move(functions));
 }
 
-Result<DwarfLoader, QString> DwarfLoader::openFile(const char *file) {
-  int fd = open(file, O_RDONLY);
+Result<DwarfLoader, QString> DwarfLoader::openFile(const QString &file) {
+  int fd = open(file.toUtf8().data(), O_RDONLY);
   if (fd < 0) {
     QString msg("error: ");
     msg += QString::number(fd);
@@ -880,7 +885,7 @@ Result<DwarfLoader, QString> DwarfLoader::openFile(const char *file) {
 
   auto buildId = find_build_id(elf);
 
-  return Result<DwarfLoader, QString>::with_value(DwarfLoader { fd, elf, std::move(buildId) });
+  return Result<DwarfLoader, QString>::with_value(DwarfLoader{fd, elf, std::move(buildId), file});
 }
 
 uint64_t DwarfLoader::getBuildId() {
@@ -914,7 +919,7 @@ Result<DwarfInfo, QString> DwarfLoader::load() {
         return Result<DwarfInfo, QString>::with_error(std::move(functions).into_error());
       }
 
-      return Result<DwarfInfo, QString>::with_value(DwarfInfo(std::move(buildId), std::move(functions).into_value()));
+      return Result<DwarfInfo, QString>::with_value(DwarfInfo(std::move(file), std::move(buildId), std::move(functions).into_value()));
     }
     case DW_DLV_NO_ENTRY: {
       QString msg("no_entry");
