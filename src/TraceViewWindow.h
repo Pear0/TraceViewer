@@ -34,6 +34,7 @@ Q_OBJECT
   QActionGroup *traceOrderGroup = nullptr;
   QAction *traceOrderTopDownAct = nullptr;
   QAction *traceOrderBottomUpAct = nullptr;
+  QAction *traceOrderAllFuncsAct = nullptr;
   QAction *traceShowInlinedFuncsAct = nullptr;
   QAction *customTraceWindowAct = nullptr;
 

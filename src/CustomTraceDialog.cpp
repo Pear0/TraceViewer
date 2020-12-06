@@ -28,10 +28,6 @@ CustomTraceDialog::CustomTraceDialog(QWidget *parent, Qt::WindowFlags f)
 
   layout->addWidget(buildIdCombo, 1, 0, 1, 3);
 
-  buildId = new QLineEdit(this);
-  buildId->setPlaceholderText("0xdeadbeef");
-  layout->addWidget(buildId, 5, 0, 1, 3);
-
   label = new QLabel("Addresses", this);
   layout->addWidget(label, 3, 0, 1, 1);
 
@@ -53,7 +49,7 @@ CustomTraceDialog::CustomTraceDialog(QWidget *parent, Qt::WindowFlags f)
   setLayout(layout);
 
   connect(updateTimer, &QTimer::timeout, this, &CustomTraceDialog::timerTick);
-  connect(buildId, &QLineEdit::textChanged, this, &CustomTraceDialog::buildIdChanged);
+  connect(buildIdCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &CustomTraceDialog::buildIdChanged);
   connect(addressesEdit, &QPlainTextEdit::textChanged, this, &CustomTraceDialog::addressesChanged);
 
   updateTimer->start();
@@ -74,7 +70,9 @@ static std::pair<uint64_t, bool> parseInt(const QString &str) {
 }
 
 void CustomTraceDialog::updateSymbols() {
-  if (!buildIdValid) {
+  bool ok = false;
+  auto id = buildIdCombo->currentData().toULongLong(&ok);
+  if (!ok) {
     functionsEdit->setPlainText(QString());
     return;
   }
@@ -82,7 +80,7 @@ void CustomTraceDialog::updateSymbols() {
   QString result;
 
   auto debugTable = getDebugTable();
-  auto info = debugTable->loadedFiles.find(selectedBuildId);
+  auto info = debugTable->loadedFiles.find(id);
 
   auto lines = addressesEdit->toPlainText().split(reNewline);
   for (auto &line : lines) {
@@ -99,22 +97,6 @@ void CustomTraceDialog::updateSymbols() {
 
 
 void CustomTraceDialog::addressesChanged() {
-  updateSymbols();
-}
-
-void CustomTraceDialog::buildIdChanged() {
-  auto buildIdStr = buildId->text();
-  buildIdValid = false;
-
-  auto [id, valid] = parseInt(buildIdStr);
-  if (valid && getDebugTable()->hasBuildId(id)) {
-    selectedBuildId = id;
-    buildIdValid = true;
-  }
-
-  auto pal = buildId->palette();
-  pal.setColor(buildId->foregroundRole(), buildIdValid ? Qt::green : Qt::red);
-  buildId->setPalette(pal);
   updateSymbols();
 }
 
@@ -152,4 +134,8 @@ void CustomTraceDialog::timerTick() {
 
     buildIdCombo->insertItem(i, name, QVariant(buildIds[i]));
   }
+}
+
+void CustomTraceDialog::buildIdChanged(int index) {
+  updateSymbols();
 }

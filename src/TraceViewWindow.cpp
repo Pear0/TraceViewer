@@ -147,7 +147,19 @@ void TraceViewWindow::performReload(const TraceData &data) {
       std::reverse(list.begin(), list.end());
     }
 
-    mergeFooBar(nullptr, topItems, list);
+    QList<QString> subList;
+    if (traceOrderAllFuncsAct->isChecked()) {
+      for (size_t i = 0; i < list.size(); i++) {
+        subList.clear();
+        for (size_t j = i; j < list.size(); j++) {
+          subList.push_back(list[j]);
+        }
+
+        mergeFooBar(nullptr, topItems, subList);
+      }
+    } else {
+      mergeFooBar(nullptr, topItems, list);
+    }
   }
 
   treeWidget->clear();
@@ -232,6 +244,9 @@ void TraceViewWindow::createMenus() {
   traceOrderBottomUpAct->setShortcut(QKeySequence("Ctrl+8"));
   traceOrderBottomUpAct->setCheckable(true);
 
+  traceOrderAllFuncsAct = new QAction("All First", this);
+  traceOrderAllFuncsAct->setCheckable(true);
+
   traceShowInlinedFuncsAct = new QAction("Show Inlined Funcs", this);
   traceShowInlinedFuncsAct->setShortcut(QKeySequence("Ctrl+I"));
   traceShowInlinedFuncsAct->setCheckable(true);
@@ -250,6 +265,7 @@ void TraceViewWindow::createMenus() {
     orderMenu->addAction(traceOrderBottomUpAct);
   }
 
+  viewMenu->addAction(traceOrderAllFuncsAct);
   viewMenu->addAction(traceShowInlinedFuncsAct);
 
   viewMenu->addSeparator();
@@ -261,6 +277,7 @@ void TraceViewWindow::createMenus() {
   // reloadTraces() inspects the current ordering, so all we need is to trigger a reload.
   connect(traceOrderTopDownAct, &QAction::triggered, this, &TraceViewWindow::reloadTraces);
   connect(traceOrderBottomUpAct, &QAction::triggered, this, &TraceViewWindow::reloadTraces);
+  connect(traceOrderAllFuncsAct, &QAction::triggered, this, &TraceViewWindow::reloadTraces);
   connect(traceShowInlinedFuncsAct, &QAction::triggered, this, &TraceViewWindow::reloadTraces);
 
   connect(customTraceWindowAct, &QAction::triggered, this, &TraceViewWindow::openCustomTraceDialog);

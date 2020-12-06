@@ -21,7 +21,6 @@ class CustomTraceDialog : public QDialog {
   QTimer *updateTimer;
 
   QComboBox *buildIdCombo = nullptr;
-  QLineEdit *buildId = nullptr;
   QPlainTextEdit *addressesEdit = nullptr;
   QPlainTextEdit *functionsEdit = nullptr;
 
@@ -37,7 +36,7 @@ private:
 
 private slots:
   void addressesChanged();
-  void buildIdChanged();
+  void buildIdChanged(int index);
   void timerTick();
 
 };
