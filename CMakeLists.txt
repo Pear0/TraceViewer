@@ -36,7 +36,7 @@ include_directories(lib/libdwarf/libdwarf)
 include_directories(${LIBELF_INCLUDE_DIRS})
 include_directories(${LIBCAPNP_INCLUDE_DIRS})
 
-add_executable(TraceViewer2 MACOSX_BUNDLE ${CAPNP_SRCS}
+add_executable(TraceViewer2 ${CAPNP_SRCS}
         src/main.cpp
         src/ListeningThread.cpp
         src/ListeningThread.h
@@ -53,6 +53,12 @@ add_executable(TraceViewer2 MACOSX_BUNDLE ${CAPNP_SRCS}
         src/TraceViewWindow.h
         src/FileLoader.cpp
         src/FileLoader.h src/CustomTraceDialog.cpp src/CustomTraceDialog.h)
+
+set_target_properties(TraceViewer2 PROPERTIES
+        MACOSX_BUNDLE TRUE
+        MACOSX_BUNDLE_BUNDLE_NAME "Trace Viewer"
+        MACOSX_BUNDLE_GUI_IDENTIFIER com.pear0.traceviewer
+        )
 
 target_include_directories(TraceViewer2 PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 
