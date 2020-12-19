@@ -9,6 +9,7 @@
 #include <vector>
 
 #include <QString>
+#include <QTimer>
 
 struct TraceFrame {
   uint64_t pc;
@@ -48,18 +49,31 @@ struct Timeline {
   }
 };
 
-class TraceData {
+class TraceData : public QObject {
+  Q_OBJECT
+
   std::mutex lock{};
+
+  QTimer *updateDebouncer = nullptr;
 
 public:
   // sorted by nanoseconds
   std::vector<TraceEvent> events{};
-  uint64_t change_count;
+  uint64_t change_count { 0 };
 
 public:
-  TraceData() = default;
+  TraceData();
   TraceData(const TraceData &);
 
+signals:
+  /// Triggered after a cool down period whenever the data changes.
+  void dataChanged();
+
+  /// Mark that data model has changed, and an update should be triggered.
+  /// Thread-safe.
+  void markChange();
+
+public:
   void insert(TraceEvent event);
 
   void parse(uint8_t *data, size_t len);
@@ -69,6 +83,16 @@ public:
   void importFromFile(QString file);
 
   void generateTimeline(Timeline &timeline, int width);
+
+private slots:
+  /// Timer has elapsed -> forward to dataChanged().
+  void debounceTriggered();
+
+  /// triggered by markChange() after crossing thread boundaries.
+  void rawDataChanged();
+
+private:
+  void initialize();
 
 };
 

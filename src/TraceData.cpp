@@ -16,15 +16,32 @@
 #include "schema/tracestreaming.capnp.h"
 #include "QtOutputStream.h"
 
+TraceData::TraceData() : QObject() {
+  initialize();
+}
+
 TraceData::TraceData(const TraceData &other) : events(), change_count(0) {
+  initialize();
+
   const std::lock_guard<std::mutex> g(lock);
   events = other.events;
   change_count = other.change_count;
 }
 
+void TraceData::initialize() {
+  updateDebouncer = new QTimer(this);
+  updateDebouncer->setSingleShot(true);
+
+  connect(updateDebouncer, &QTimer::timeout, this, &TraceData::debounceTriggered);
+  connect(this, &TraceData::markChange, this, &TraceData::rawDataChanged);
+
+  // connect(this, &TraceData::markChange, this, &TraceData::debounceTriggered);
+}
+
 void TraceData::insert(TraceEvent event) {
   const std::lock_guard<std::mutex> g(lock);
   change_count++;
+  markChange();
 
   auto it = events.end();
   while (it != events.begin()) {
@@ -175,3 +192,15 @@ void TraceData::generateTimeline(Timeline &timeline, int width) {
   }
 
 }
+
+void TraceData::debounceTriggered() {
+  dataChanged();
+}
+
+void TraceData::rawDataChanged() {
+  if (!updateDebouncer->isActive())
+    updateDebouncer->start(100);
+}
+
+
+

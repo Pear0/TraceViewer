@@ -12,6 +12,11 @@
 TraceTimeline::TraceTimeline(std::shared_ptr<TraceData> traceData, QWidget *parent) : QWidget(parent), traceData(std::move(traceData)) {
   setFixedHeight(100);
 
+  connect(this->traceData.get(), &TraceData::dataChanged, this, &TraceTimeline::traceDataChanged);
+}
+
+void TraceTimeline::traceDataChanged() {
+  repaint();
 }
 
 void TraceTimeline::paintEvent(QPaintEvent *event) {

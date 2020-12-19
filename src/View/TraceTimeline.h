@@ -24,6 +24,9 @@ public:
 
   ~TraceTimeline() override = default;
 
+public slots:
+  void traceDataChanged();
+
 protected:
   void paintEvent(QPaintEvent *event) override;
 
