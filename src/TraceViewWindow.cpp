@@ -10,6 +10,7 @@
 #include <QTimer>
 #include <QThread>
 #include <QGridLayout>
+#include <QFileDialog>
 
 
 class FrameItem : public QTreeWidgetItem {
@@ -49,6 +50,8 @@ TraceViewWindow::TraceViewWindow(std::shared_ptr<TraceData> trace_data,
 
   fileWatcher = new QFileSystemWatcher(this);
 
+  traceTimeline = new TraceTimeline(this->trace_data, this);
+
   treeWidget = new QTreeWidget(this);
   treeWidget->setColumnCount(2);
 
@@ -68,7 +71,9 @@ TraceViewWindow::TraceViewWindow(std::shared_ptr<TraceData> trace_data,
 
   auto *mainLayout = new QGridLayout;
 
-  mainLayout->addWidget(treeWidget);
+  mainLayout->addWidget(traceTimeline, 0, 0);
+  mainLayout->addWidget(treeWidget, 1, 0);
+  mainLayout->setRowStretch(1, 1);
 
   widget->setLayout(mainLayout);
 
@@ -227,6 +232,9 @@ QList<QString> TraceViewWindow::generateFunctionStack(const TraceEvent &event) {
 
 void TraceViewWindow::createMenus() {
 
+  exportTracesAct = new QAction("Export Traces...", this);
+  importTracesAct = new QAction("Import Traces...", this);
+
   reloadTracesAct = new QAction("Reload Traces", this);
   reloadTracesAct->setShortcuts(QKeySequence::Refresh);
 
@@ -255,6 +263,10 @@ void TraceViewWindow::createMenus() {
   customTraceWindowAct = new QAction("Custom Trace", this);
   customTraceWindowAct->setShortcut(QKeySequence("Ctrl+9"));
 
+  auto *fileMenu = menuBar()->addMenu("File");
+  fileMenu->addAction(exportTracesAct);
+  fileMenu->addAction(importTracesAct);
+
   auto *viewMenu = menuBar()->addMenu("View");
   viewMenu->addAction(reloadTracesAct);
   viewMenu->addAction(autoReloadTracesAct);
@@ -273,6 +285,9 @@ void TraceViewWindow::createMenus() {
   auto *windowMenu = menuBar()->addMenu("Window");
   windowMenu->addAction(customTraceWindowAct);
   windowMenu->addSeparator();
+
+  connect(exportTracesAct, &QAction::triggered, this, &TraceViewWindow::openExportTracesDialog);
+  connect(importTracesAct, &QAction::triggered, this, &TraceViewWindow::openImportTracesDialog);
 
   // reloadTraces() inspects the current ordering, so all we need is to trigger a reload.
   connect(traceOrderTopDownAct, &QAction::triggered, this, &TraceViewWindow::reloadTraces);
@@ -318,4 +333,28 @@ void TraceViewWindow::addFile(const QString &path) {
   fileWatcher->addPath(path);
   doLoadFile(path);
 }
+
+void TraceViewWindow::openExportTracesDialog() {
+
+  auto fileName = QFileDialog::getSaveFileName(
+          this, "Export Traces", "/Users/will", "Traces (*.traces)");
+
+  std::cout << "export file: " << fileName.toStdString() << "\n";
+
+  trace_data->exportToFile(fileName);
+
+}
+
+void TraceViewWindow::openImportTracesDialog() {
+
+  auto fileName = QFileDialog::getOpenFileName(
+          this, "Import Traces", "/Users/will/traces", "Traces (*.traces)");
+
+  std::cout << "import file: " << fileName.toStdString() << "\n";
+
+  trace_data->importFromFile(fileName);
+
+}
+
+
 

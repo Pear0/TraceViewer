@@ -52,7 +52,13 @@ add_executable(TraceViewer2 ${CAPNP_SRCS}
         src/TraceViewWindow.cpp
         src/TraceViewWindow.h
         src/FileLoader.cpp
-        src/FileLoader.h src/CustomTraceDialog.cpp src/CustomTraceDialog.h)
+        src/FileLoader.h
+        src/CustomTraceDialog.cpp
+        src/CustomTraceDialog.h
+        src/QtOutputStream.cpp
+        src/QtOutputStream.h
+        src/View/TraceTimeline.cpp
+        src/View/TraceTimeline.h)
 
 set_target_properties(TraceViewer2 PROPERTIES
         MACOSX_BUNDLE TRUE

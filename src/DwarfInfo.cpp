@@ -922,7 +922,7 @@ Result<DwarfInfo, QString> DwarfLoader::load() {
       return Result<DwarfInfo, QString>::with_value(DwarfInfo(std::move(file), std::move(buildId), std::move(functions).into_value()));
     }
     case DW_DLV_NO_ENTRY: {
-      QString msg("no_entry");
+      QString msg("dwarf_elf_init() -> no_entry");
       return Result<DwarfInfo, QString>::with_error(msg);
     }
     case DW_DLV_ERROR: {

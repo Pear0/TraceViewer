@@ -14,6 +14,7 @@
 #include <QTimer>
 #include <QTreeWidget>
 
+#include "View/TraceTimeline.h"
 #include "TraceData.h"
 #include "DwarfInfo.h"
 #include "DebugTable.h"
@@ -24,11 +25,14 @@ class TraceViewWindow : public QMainWindow {
 Q_OBJECT
 
   QTimer *updateTimer = nullptr;
+  TraceTimeline *traceTimeline = nullptr;
   QTreeWidget *treeWidget = nullptr;
   FileLoader *fileLoader = nullptr;
   QThread *fileLoaderThread = nullptr;
   CustomTraceDialog *customTraceDialog = nullptr;
 
+  QAction *exportTracesAct = nullptr;
+  QAction *importTracesAct = nullptr;
   QAction *reloadTracesAct = nullptr;
   QAction *autoReloadTracesAct = nullptr;
   QActionGroup *traceOrderGroup = nullptr;
@@ -62,6 +66,10 @@ private slots:
   void fileLoaded(QString path);
 
   void openCustomTraceDialog();
+
+  void openExportTracesDialog();
+
+  void openImportTracesDialog();
 
 private:
   void performReload(const TraceData &data);
