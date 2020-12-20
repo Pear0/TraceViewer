@@ -24,7 +24,7 @@ struct DieStackEntry {
 
   std::vector<Dwarf_Half> attribute_codes{};
 
-  FunctionInfo *function = nullptr;
+  ConcreteFunctionInfo *function = nullptr;
   InlinedFunctionInfo *inlined_function = nullptr;
 };
 
@@ -209,7 +209,11 @@ void InlinedFunctionInfo::dump() {
   }
 }
 
-void FunctionInfo::dump() {
+QString InlinedFunctionInfo::getFullName() {
+  return origin_fn->getFullName();
+}
+
+void ConcreteFunctionInfo::dump() {
   std::cout << full_name.toStdString() << "\n";
 
   if (!ranges.empty()) {
@@ -307,7 +311,7 @@ static std::vector<uint8_t> find_build_id(Elf *elf) {
   return std::vector<uint8_t>();
 }
 
-std::optional<std::pair<FunctionInfo *, std::vector<InlinedFunctionInfo *>>>
+std::optional<std::pair<ConcreteFunctionInfo *, std::vector<InlinedFunctionInfo *>>>
 DwarfInfo::resolve_address(uint64_t address) {
 
   auto func_it = std::lower_bound(functions.cbegin(), functions.cend(), address, [](const auto &func, const auto addr) {
@@ -533,12 +537,12 @@ build_ranges(Dwarf_Debug debug_info, CompilationUnitInfo &cu_info, Dwarf_Die die
   }
 }
 
-static Result<std::vector<std::unique_ptr<FunctionInfo>>, QString> scan_debug_info(Dwarf_Debug debug_info) {
+static Result<std::vector<std::unique_ptr<ConcreteFunctionInfo>>, QString> scan_debug_info(Dwarf_Debug debug_info) {
   CompilationUnitHeader header{};
   bool is_info = true;
   constexpr auto dump_tags = false;
 
-  std::vector<std::unique_ptr<FunctionInfo>> functions;
+  std::vector<std::unique_ptr<ConcreteFunctionInfo>> functions;
   Dwarf_Error error;
 
   for (int cu_index = 0;; cu_index++) {
@@ -550,14 +554,14 @@ static Result<std::vector<std::unique_ptr<FunctionInfo>>, QString> scan_debug_in
             &header.abbrev_offset, &header.address_size, &header.offset_size,
             &header.extension_size, &header.signature, &header.type_offset,
             &header.next_cu_header, &header.header_cu_type, &error);
-    TRY_ERROR(std::vector<std::unique_ptr<FunctionInfo>>, debug_info, res, error);
+    TRY_ERROR(std::vector<std::unique_ptr<ConcreteFunctionInfo>>, debug_info, res, error);
 
     if (res == DW_DLV_NO_ENTRY)
       break; // no more entries, exit.
 
     Dwarf_Die cu_die;
     res = dwarf_siblingof_b(debug_info, nullptr, is_info, &cu_die, &error);
-    TRY_ERROR(std::vector<std::unique_ptr<FunctionInfo>>, debug_info, res, error);
+    TRY_ERROR(std::vector<std::unique_ptr<ConcreteFunctionInfo>>, debug_info, res, error);
     if (res == DW_DLV_NO_ENTRY)
       continue;
 
@@ -768,7 +772,7 @@ static Result<std::vector<std::unique_ptr<FunctionInfo>>, QString> scan_debug_in
 
           full_name += die_info.name;
 
-          auto function = std::make_unique<FunctionInfo>();
+          auto function = std::make_unique<ConcreteFunctionInfo>();
           function->name = die_info.name;
           function->die_offset = die_info.die_offset;
           function->full_name = full_name;
@@ -834,7 +838,7 @@ static Result<std::vector<std::unique_ptr<FunctionInfo>>, QString> scan_debug_in
   {
     // link all the inline functions to their definition
 
-    std::unordered_map<Dwarf_Off, FunctionInfo *> func_lookup;
+    std::unordered_map<Dwarf_Off, ConcreteFunctionInfo *> func_lookup;
     for (auto &func : functions) {
       func_lookup[func->die_offset] = func.get();
     }
@@ -865,7 +869,7 @@ static Result<std::vector<std::unique_ptr<FunctionInfo>>, QString> scan_debug_in
 //    func->dump();
 //  }
 
-  return Result<std::vector<std::unique_ptr<FunctionInfo>>, QString>::with_value(std::move(functions));
+  return Result<std::vector<std::unique_ptr<ConcreteFunctionInfo>>, QString>::with_value(std::move(functions));
 }
 
 Result<DwarfLoader, QString> DwarfLoader::openFile(const QString &file) {

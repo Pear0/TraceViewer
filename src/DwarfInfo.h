@@ -16,24 +16,36 @@
 #include "libdwarf.h"
 #include "Result.h"
 
-struct FunctionInfo;
+struct ConcreteFunctionInfo;
 struct InlinedFunctionInfo;
 
-struct InlinedFunctionInfo {
+struct AbstractFunctionInfo {
+  virtual bool isInline() = 0;
+
+  virtual QString getFullName() = 0;
+};
+
+struct InlinedFunctionInfo : public AbstractFunctionInfo {
 
   int depth = 0;
   Dwarf_Off die_offset = 0;
   Dwarf_Off origin_offset = 0;
-  FunctionInfo *origin_fn = nullptr;
+  ConcreteFunctionInfo *origin_fn = nullptr;
 
   std::vector<std::unique_ptr<InlinedFunctionInfo>> inline_functions;
 
   std::vector<std::pair<uint64_t, uint64_t>> ranges;
 
   void dump();
+
+  bool isInline() override {
+    return true;
+  }
+
+  QString getFullName() override;
 };
 
-struct FunctionInfo {
+struct ConcreteFunctionInfo : public AbstractFunctionInfo {
   Dwarf_Off die_offset = 0;
   const char *name = nullptr;
   QString full_name;
@@ -43,17 +55,25 @@ struct FunctionInfo {
   std::vector<std::pair<uint64_t, uint64_t>> ranges;
 
   void dump();
+
+  bool isInline() override {
+    return false;
+  }
+
+  QString getFullName() override {
+    return full_name;
+  }
 };
 
 class DwarfInfo {
   std::vector<uint8_t> buildId;
-  std::vector<std::unique_ptr<FunctionInfo>> functions;
+  std::vector<std::unique_ptr<ConcreteFunctionInfo>> functions;
 
 public:
   QString file;
   std::time_t loaded_time;
 
-  explicit DwarfInfo(QString &&file, std::vector<uint8_t> &&buildId, std::vector<std::unique_ptr<FunctionInfo>> &&functions)
+  explicit DwarfInfo(QString &&file, std::vector<uint8_t> &&buildId, std::vector<std::unique_ptr<ConcreteFunctionInfo>> &&functions)
           : file(std::move(file)), loaded_time(std::time(nullptr)), buildId(std::move(buildId)), functions(std::move(functions)) {}
 
   explicit DwarfInfo(const DwarfInfo &other) = delete;
@@ -62,7 +82,7 @@ public:
 
   virtual ~DwarfInfo();
 
-  std::optional<std::pair<FunctionInfo *, std::vector<InlinedFunctionInfo *>>> resolve_address(uint64_t address);
+  std::optional<std::pair<ConcreteFunctionInfo *, std::vector<InlinedFunctionInfo *>>> resolve_address(uint64_t address);
 
   std::pair<QString, bool> symbolicate(uint64_t address);
 

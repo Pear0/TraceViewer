@@ -20,13 +20,15 @@
 #include "DebugTable.h"
 #include "FileLoader.h"
 #include "CustomTraceDialog.h"
+#include "TraceHierarchyModel.h"
 
 class TraceViewWindow : public QMainWindow {
 Q_OBJECT
 
   QTimer *updateTimer = nullptr;
   TraceTimeline *traceTimeline = nullptr;
-  QTreeWidget *treeWidget = nullptr;
+  QTreeView *treeWidget = nullptr;
+  TraceHierarchyModel *traceModel = nullptr;
   FileLoader *fileLoader = nullptr;
   QThread *fileLoaderThread = nullptr;
   CustomTraceDialog *customTraceDialog = nullptr;

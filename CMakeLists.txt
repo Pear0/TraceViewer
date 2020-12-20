@@ -58,7 +58,7 @@ add_executable(TraceViewer2 ${CAPNP_SRCS}
         src/QtOutputStream.cpp
         src/QtOutputStream.h
         src/View/TraceTimeline.cpp
-        src/View/TraceTimeline.h)
+        src/View/TraceTimeline.h src/TraceHierarchyModel.cpp src/TraceHierarchyModel.h)
 
 set_target_properties(TraceViewer2 PROPERTIES
         MACOSX_BUNDLE TRUE

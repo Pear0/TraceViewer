@@ -6,6 +6,7 @@
 #include "DebugTable.h"
 
 #include <QAction>
+#include <QHeaderView>
 #include <QMenuBar>
 #include <QTimer>
 #include <QThread>
@@ -52,8 +53,19 @@ TraceViewWindow::TraceViewWindow(std::shared_ptr<TraceData> trace_data,
 
   traceTimeline = new TraceTimeline(this->trace_data, this);
 
-  treeWidget = new QTreeWidget(this);
-  treeWidget->setColumnCount(2);
+  treeWidget = new QTreeView(this);
+  // treeWidget->setColumnCount(2);
+
+  traceModel = new TraceHierarchyModel(this->trace_data, this->debugTable, this);
+  treeWidget->setModel(traceModel);
+  treeWidget->reset();
+
+  // Logically the name column is first, but move it visually to the right side.
+  treeWidget->header()->moveSection(0,treeWidget->header()->count() - 1);
+
+  // All rows are 1 line. Massive perf improvement
+  // when updates are frequent.
+  treeWidget->setUniformRowHeights(true);
 
   fileLoaderThread = new QThread(this);
   fileLoaderThread->start();
@@ -167,8 +179,9 @@ void TraceViewWindow::performReload(const TraceData &data) {
     }
   }
 
-  treeWidget->clear();
-  treeWidget->addTopLevelItems(topItems);
+  // treeWidget->clear();
+  // treeWidget->addTopLevelItems(topItems);
+  treeWidget->reset();
   last_trace_change = data.change_count;
 }
 

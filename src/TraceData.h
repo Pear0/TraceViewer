@@ -52,11 +52,10 @@ struct Timeline {
 class TraceData : public QObject {
   Q_OBJECT
 
-  std::mutex lock{};
-
   QTimer *updateDebouncer = nullptr;
 
 public:
+  std::mutex lock{};
   // sorted by nanoseconds
   std::vector<TraceEvent> events{};
   uint64_t change_count { 0 };
