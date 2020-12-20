@@ -47,8 +47,6 @@ add_executable(TraceViewer2 ${CAPNP_SRCS}
         src/DwarfInfo.cpp
         src/DwarfInfo.h
         src/Result.h
-        src/TraceModel.cpp
-        src/TraceModel.h
         src/View/TraceViewWindow.cpp
         src/View/TraceViewWindow.h
         src/FileLoader.cpp
