@@ -57,7 +57,11 @@ TraceViewWindow::TraceViewWindow(std::shared_ptr<TraceData> trace_data,
   // treeWidget->setColumnCount(2);
 
   traceModel = new TraceHierarchyModel(this->trace_data, this->debugTable, this);
-  treeWidget->setModel(traceModel);
+
+  traceFilter = new TraceHierarchyFilterProxy(this);
+  traceFilter->setSourceModel(traceModel);
+
+  treeWidget->setModel(traceFilter);
   treeWidget->reset();
 
   // Logically the name column is first, but move it visually to the right side.
@@ -66,6 +70,7 @@ TraceViewWindow::TraceViewWindow(std::shared_ptr<TraceData> trace_data,
   // All rows are 1 line. Massive perf improvement
   // when updates are frequent.
   treeWidget->setUniformRowHeights(true);
+  treeWidget->setSortingEnabled(true);
 
   fileLoaderThread = new QThread(this);
   fileLoaderThread->start();

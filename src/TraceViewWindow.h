@@ -21,6 +21,7 @@
 #include "FileLoader.h"
 #include "CustomTraceDialog.h"
 #include "TraceHierarchyModel.h"
+#include "TraceHierarchyFilterProxy.h"
 
 class TraceViewWindow : public QMainWindow {
 Q_OBJECT
@@ -29,6 +30,7 @@ Q_OBJECT
   TraceTimeline *traceTimeline = nullptr;
   QTreeView *treeWidget = nullptr;
   TraceHierarchyModel *traceModel = nullptr;
+  TraceHierarchyFilterProxy *traceFilter = nullptr;
   FileLoader *fileLoader = nullptr;
   QThread *fileLoaderThread = nullptr;
   CustomTraceDialog *customTraceDialog = nullptr;

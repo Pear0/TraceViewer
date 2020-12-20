@@ -344,6 +344,8 @@ DwarfInfo::resolve_address(uint64_t address) {
       for (auto &inline_func : *inlined_functions) {
         if (!ranges_contains_address(inline_func->ranges, address))
           continue;
+        if (inline_stack.empty())
+          inline_stack.reserve(8);
         inline_stack.push_back(inline_func.get());
         inlined_functions = &inline_func->inline_functions;
         fresh = true;

@@ -40,7 +40,7 @@ void TraceData::initialize() {
 
 void TraceData::insert(TraceEvent event) {
   const std::lock_guard<std::mutex> g(lock);
-  change_count++;
+  event.change_index = ++change_count;
   markChange();
 
   auto it = events.end();

@@ -6,58 +6,64 @@
 
 #include <QSize>
 
+#include "QtCustomUser.h"
 #include "TraceHierarchyModel.h"
 
-struct TraceHierarchyModel::AbstractItem {
-  std::vector<std::unique_ptr<AbstractItem>> children;
-  AbstractItem *parent { nullptr };
-  int selfIndex { -1 };
-  size_t count { 0 };
-
-  virtual ~AbstractItem() = default;
-
-  virtual bool targetMatch(const AbstractItem *other) = 0;
-
-  virtual QString getName() = 0;
+enum class ItemType {
+  Invalid = 0,
+  RawAddress,
+  Function,
 };
 
-struct TraceHierarchyModel::RawAddressItem : public AbstractItem {
-  uint64_t address { 0 };
+struct TraceHierarchyModel::HierarchyItem {
+  std::vector<std::unique_ptr<HierarchyItem>> children;
+  HierarchyItem *parent{nullptr};
+  int selfIndex{-1};
+  size_t count{0};
+  ItemType itemType{ItemType::Invalid};
 
-  explicit RawAddressItem(uint64_t address) : address(address) {}
+  // RawAddress fields
+  uint64_t address{0};
 
-  ~RawAddressItem() override = default;
+  // Function fields
 
-  bool targetMatch(const AbstractItem *other) override {
-    auto *ptr = dynamic_cast<const RawAddressItem *>(other);
-    return ptr && ptr->address == address;
+  AbstractFunctionInfo *functionInfo{nullptr};
+
+  // Invalid
+  HierarchyItem() {}
+
+  explicit HierarchyItem(uint64_t address)
+          : itemType(ItemType::RawAddress), address(address) {}
+
+  explicit HierarchyItem(AbstractFunctionInfo *functionInfo)
+          : itemType(ItemType::Function), functionInfo(functionInfo) {}
+
+  explicit HierarchyItem(HierarchyItem &&other) = default;
+
+  virtual ~HierarchyItem() = default;
+
+  HierarchyItem& operator=(HierarchyItem &&) = default;
+
+  [[nodiscard]] bool targetMatch(const HierarchyItem *other) const {
+    return itemType == other->itemType && address == other->address && functionInfo == other->functionInfo;
   }
 
-  QString getName() override {
-    return QString("0x") + QString::number(address, 16);
+  [[nodiscard]] std::pair<ItemType, uint64_t> matchId() const {
+    return std::make_pair(itemType,
+                          itemType == ItemType::Function ? reinterpret_cast<uint64_t>(functionInfo) : address);
+  }
+
+  [[nodiscard]] QString getName() const {
+    if (itemType == ItemType::Function)
+      return functionInfo->getFullName();
+    else
+      return QString("0x") + QString::number(address, 16);
   }
 };
-
-struct TraceHierarchyModel::FunctionItem : public AbstractItem {
-  AbstractFunctionInfo *functionInfo = nullptr;
-
-  explicit FunctionItem(AbstractFunctionInfo *functionInfo) : functionInfo(functionInfo) {}
-
-  ~FunctionItem() override = default;
-
-  bool targetMatch(const AbstractItem *other) override {
-    auto *ptr = dynamic_cast<const FunctionItem *>(other);
-    return ptr && ptr->functionInfo == functionInfo;
-  }
-
-  QString getName() override {
-    return functionInfo->getFullName();
-  }
-};
-
 
 struct TraceHierarchyModel::SymbolCache {
-  RawAddressItem root { std::numeric_limits<uint64_t>::max() };
+  HierarchyItem root{std::numeric_limits<uint64_t>::max()};
+  uint64_t lastTraceChangeCount { 0 };
 };
 
 TraceHierarchyModel::TraceHierarchyModel(
@@ -66,14 +72,12 @@ TraceHierarchyModel::TraceHierarchyModel(
           symbolCache(std::make_unique<SymbolCache>()) {
 
 
-
-
   connect(this->traceData.get(), &TraceData::dataChanged, this, &TraceHierarchyModel::tracesChanged);
 }
 
 TraceHierarchyModel::~TraceHierarchyModel() = default;
 
-QModelIndex TraceHierarchyModel::selfModelIndex(AbstractItem *item, int column) const {
+QModelIndex TraceHierarchyModel::selfModelIndex(HierarchyItem *item, int column) const {
   assert(item && "item was null");
 
   if (item == &symbolCache->root)
@@ -89,42 +93,48 @@ void TraceHierarchyModel::tracesChanged() {
   const std::lock_guard<std::mutex> g2(debugTable->lock);
 
   for (auto &event : traceData->events) {
-    AbstractItem *parent = &symbolCache->root;
+    // We've ingested this event already
+    if (event.change_index <= symbolCache->lastTraceChangeCount)
+      continue;
+
+    assert(event.change_index <= traceData->change_count && "event change index too high");
+
+    HierarchyItem *parent = &symbolCache->root;
 
     for (auto &frame : event.frames) {
-      std::unique_ptr<AbstractItem> item;
+      HierarchyItem item;
       if (auto dwarf = debugTable->loadedFiles.find(event.build_id); dwarf != debugTable->loadedFiles.end()) {
         if (auto func = dwarf->second.resolve_address(frame.pc); func) {
 
-          item = std::make_unique<FunctionItem>(func->first);
+          item = HierarchyItem(func->first);
         }
       }
-      if (!item)
-        item = std::make_unique<RawAddressItem>(frame.pc);
+      if (item.itemType == ItemType::Invalid)
+        item = HierarchyItem(frame.pc);
 
       // Find an existing child that matches.
-      auto matchedItem = item.get();
+      HierarchyItem *matchedItem = nullptr;
       for (auto &child : parent->children) {
-        if (child->targetMatch(item.get())) {
+        if (child->targetMatch(&item)) {
           matchedItem = child.get();
           break;
         }
       }
 
       // No child matches, add it
-      if (matchedItem == item.get()) {
-        item->parent = parent;
-        auto index = item->selfIndex = parent->children.size();
+      if (matchedItem == nullptr) {
+        item.parent = parent;
+        auto index = item.selfIndex = parent->children.size();
 
         auto parentModelIndex = selfModelIndex(parent);
 
         beginInsertRows(parentModelIndex, index, index);
 
-        parent->children.push_back(std::move(item));
-        item = nullptr;
+        auto itemPtr = std::make_unique<HierarchyItem>(std::move(item));
+        matchedItem = itemPtr.get();
+        parent->children.push_back(std::move(itemPtr));
 
         endInsertRows();
-
       }
 
       matchedItem->count++;
@@ -136,14 +146,14 @@ void TraceHierarchyModel::tracesChanged() {
       // follow the chain...
       parent = matchedItem;
     }
-
   }
 
+  symbolCache->lastTraceChangeCount = traceData->change_count;
 }
 
 QModelIndex TraceHierarchyModel::index(int row, int column, const QModelIndex &parent) const {
   if (parent.isValid()) {
-    auto parentItem = static_cast<AbstractItem *>(parent.internalPointer());
+    auto parentItem = static_cast<HierarchyItem *>(parent.internalPointer());
 
     return createIndex(row, column, static_cast<void *>(parentItem->children.at(row).get()));
   }
@@ -152,13 +162,13 @@ QModelIndex TraceHierarchyModel::index(int row, int column, const QModelIndex &p
 }
 
 QModelIndex TraceHierarchyModel::parent(const QModelIndex &child) const {
-  auto item = static_cast<AbstractItem *>(child.internalPointer());
+  auto item = static_cast<HierarchyItem *>(child.internalPointer());
   return selfModelIndex(item->parent);
 }
 
 int TraceHierarchyModel::rowCount(const QModelIndex &parent) const {
   if (parent.isValid()) {
-    auto item = static_cast<AbstractItem *>(parent.internalPointer());
+    auto item = static_cast<HierarchyItem *>(parent.internalPointer());
     return item->children.size();
   }
 
@@ -173,10 +183,14 @@ QVariant TraceHierarchyModel::headerData(int section, Qt::Orientation orientatio
   switch (role) {
     case Qt::DisplayRole: {
       switch (section) {
-        case 0: return QString("Function");
-        case 1: return QString("Samples (%)");
-        case 2: return QString("Self Samples (%)");
-        default: return QString("???");
+        case 0:
+          return QString("Function");
+        case 1:
+          return QString("Samples (%)");
+        case 2:
+          return QString("Self Samples (%)");
+        default:
+          return QString("???");
       }
     }
     default:
@@ -185,7 +199,7 @@ QVariant TraceHierarchyModel::headerData(int section, Qt::Orientation orientatio
 }
 
 QVariant TraceHierarchyModel::data(const QModelIndex &index, int role) const {
-  auto item = static_cast<AbstractItem *>(index.internalPointer());
+  auto item = static_cast<HierarchyItem *>(index.internalPointer());
 
   switch (role) {
     case Qt::DisplayRole:
@@ -193,8 +207,9 @@ QVariant TraceHierarchyModel::data(const QModelIndex &index, int role) const {
         return item->getName();
 
       return QString::number(item->count);
-//    case Qt::SizeHintRole:
-//      return QSize();
+    case UserQt::UserNumericRole:
+      return (int) item->count;
+
     default:
       return QVariant();
   }

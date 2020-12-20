@@ -17,9 +17,11 @@
 
 class TraceHierarchyModel : public QAbstractItemModel {
   struct SymbolCache;
-  struct AbstractItem;
+  struct HierarchyItem;
   struct RawAddressItem;
   struct FunctionItem;
+
+  Q_OBJECT
 
   std::shared_ptr<TraceData> traceData;
   std::shared_ptr<DebugTable> debugTable;
@@ -34,7 +36,7 @@ private slots:
   void tracesChanged();
 
 protected:
-  QModelIndex selfModelIndex(AbstractItem *item, int column = 0) const;
+  QModelIndex selfModelIndex(HierarchyItem *item, int column = 0) const;
 
 public:
   QModelIndex index(int row, int column, const QModelIndex &parent) const override;
