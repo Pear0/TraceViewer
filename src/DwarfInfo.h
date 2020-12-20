@@ -66,15 +66,35 @@ struct ConcreteFunctionInfo : public AbstractFunctionInfo {
 };
 
 class DwarfInfo {
+public:
+  struct LineFileInfo {
+    QString name;
+    Dwarf_Unsigned length { 0 };
+  };
+
+  struct LineInfo {
+    uint64_t address { 0 };
+    int32_t fileIndex { 0 };
+    uint32_t line { 0 };
+  };
+
+  struct LineTable {
+    std::vector<LineFileInfo> files;
+    std::vector<LineInfo> lines;
+  };
+
+private:
   std::vector<uint8_t> buildId;
   std::vector<std::unique_ptr<ConcreteFunctionInfo>> functions;
+
+  LineTable lineTable;
 
 public:
   QString file;
   std::time_t loaded_time;
 
-  explicit DwarfInfo(QString &&file, std::vector<uint8_t> &&buildId, std::vector<std::unique_ptr<ConcreteFunctionInfo>> &&functions)
-          : file(std::move(file)), loaded_time(std::time(nullptr)), buildId(std::move(buildId)), functions(std::move(functions)) {}
+  explicit DwarfInfo(QString &&file, std::vector<uint8_t> &&buildId, std::vector<std::unique_ptr<ConcreteFunctionInfo>> &&functions, LineTable &&lineTable)
+          : file(std::move(file)), loaded_time(std::time(nullptr)), buildId(std::move(buildId)), functions(std::move(functions)), lineTable(std::move(lineTable)) {}
 
   explicit DwarfInfo(const DwarfInfo &other) = delete;
 

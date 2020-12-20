@@ -171,10 +171,7 @@ get_name_from_abstract_origin(Dwarf_Debug dbg,
                               Dwarf_Error *errp);
 
 static int
-getlowhighpc(UNUSEDARG Dwarf_Debug dbg,
-             UNUSEDARG struct target_data_s *td,
-             Dwarf_Die die,
-             UNUSEDARG int level,
+getlowhighpc(Dwarf_Die die,
              int *have_pc_range,
              Dwarf_Addr *lowpc_out,
              Dwarf_Addr *highpc_out,
@@ -530,7 +527,7 @@ build_ranges(Dwarf_Debug debug_info, CompilationUnitInfo &cu_info, Dwarf_Die die
     Dwarf_Addr low_pc;
     Dwarf_Addr high_pc;
 
-    res = getlowhighpc(nullptr, nullptr, die, 0, &found_range, &low_pc, &high_pc, &error);
+    res = getlowhighpc(die, &found_range, &low_pc, &high_pc, &error);
     if (res == DW_DLV_OK && found_range) {
       return {std::pair(low_pc, high_pc)};
     } else {
@@ -874,6 +871,122 @@ static Result<std::vector<std::unique_ptr<ConcreteFunctionInfo>>, QString> scan_
   return Result<std::vector<std::unique_ptr<ConcreteFunctionInfo>>, QString>::with_value(std::move(functions));
 }
 
+static Result<DwarfInfo::LineTable, QString> generate_line_table(Dwarf_Debug debug_info) {
+  CompilationUnitHeader header{};
+  bool is_info = true;
+
+  DwarfInfo::LineTable lineTable;
+  Dwarf_Error error;
+
+  for (int cu_index = 0;; cu_index++) {
+    // iterate through the compilation units...
+    // returns NO_ENTRY and resets state after progressing all CUs
+
+    int res = dwarf_next_cu_header_d(
+            debug_info, is_info, &header.header_length, &header.version_stamp,
+            &header.abbrev_offset, &header.address_size, &header.offset_size,
+            &header.extension_size, &header.signature, &header.type_offset,
+            &header.next_cu_header, &header.header_cu_type, &error);
+    TRY_ERROR(DwarfInfo::LineTable, debug_info, res, error);
+
+    if (res == DW_DLV_NO_ENTRY)
+      break; // no more entries, exit.
+
+    Dwarf_Die cu_die;
+    res = dwarf_siblingof_b(debug_info, nullptr, is_info, &cu_die, &error);
+    TRY_ERROR(DwarfInfo::LineTable, debug_info, res, error);
+    if (res == DW_DLV_NO_ENTRY)
+      continue;
+
+    Dwarf_Unsigned line_version = 0;
+    Dwarf_Small table_type = 0;
+    Dwarf_Line_Context line_context = nullptr;
+
+    res = dwarf_srclines_b(cu_die, &line_version,
+                           &table_type, &line_context, &error);
+    TRY_ERROR(DwarfInfo::LineTable, debug_info, res, error);
+
+    if (table_type != 1) {
+      std::cout << std::dec << "unexpected table_type = " << (int)table_type << ", line_version = " << line_version << std::endl;
+      continue;
+    }
+
+    char **srcFiles = nullptr;
+    Dwarf_Signed srcFilesCount = 0;
+
+    res = dwarf_srcfiles(cu_die, &srcFiles, &srcFilesCount, &error);
+    if (res != DW_DLV_OK) {
+      return Result<DwarfInfo::LineTable, QString>::with_error(handle_error(debug_info, error));
+    }
+
+    size_t fileIndexOffset = lineTable.files.size();
+
+    for (Dwarf_Signed j = 0; j < srcFilesCount; j++) {
+      char *name = srcFiles[j];
+      // std::cout << "file: " << name << std::endl;
+
+      lineTable.files.push_back(DwarfInfo::LineFileInfo{ QString(name), 0 });
+
+      dwarf_dealloc(debug_info, name, DW_DLA_STRING);
+    }
+
+    dwarf_dealloc(debug_info, srcFiles, DW_DLA_LIST);
+    srcFiles = nullptr;
+
+    Dwarf_Line *linebuf = 0;
+    Dwarf_Signed linecount = 0;
+
+    res = dwarf_srclines_from_linecontext(line_context, &linebuf, &linecount, &error);
+    if (res != DW_DLV_OK) {
+      dwarf_srclines_dealloc_b(line_context);
+      line_context = 0;
+      return Result<DwarfInfo::LineTable, QString>::with_error(handle_error(debug_info, error));
+    }
+
+    for (int i = 0; i < linecount; ++i) {
+      Dwarf_Addr lineaddr = 0;
+      Dwarf_Unsigned filenum = 0;
+      Dwarf_Unsigned lineno = 0;
+
+      res = dwarf_lineno(linebuf[i], &lineno, &error);
+      TRY_ERROR(DwarfInfo::LineTable, debug_info, res, error);
+
+      res = dwarf_line_srcfileno(linebuf[i], &filenum, &error);
+      TRY_ERROR(DwarfInfo::LineTable, debug_info, res, error);
+
+      assert(filenum != 0 && "filenum was zero");
+      if (filenum) {
+        filenum -= 1;
+      }
+      res = dwarf_lineaddr(linebuf[i], &lineaddr, &error);
+      TRY_ERROR(DwarfInfo::LineTable, debug_info, res, error);
+
+      int32_t fileIndex = -1;
+      if (fileIndexOffset + filenum < lineTable.files.size()) {
+        fileIndex = (int32_t)(fileIndexOffset + filenum);
+      }
+
+      lineTable.lines.push_back(DwarfInfo::LineInfo{ lineaddr, fileIndex, (uint32_t)lineno });
+    }
+
+    dwarf_srclines_dealloc_b(line_context);
+  }
+
+  std::stable_sort(lineTable.lines.begin(), lineTable.lines.end(), [](auto &a, auto &b) {
+    return a.address < b.address;
+  });
+
+//  for (auto &addr : lineTable.lines) {
+//    auto *file = addr.fileIndex >= 0 ? &lineTable.files[addr.fileIndex] : nullptr;
+//    std::cout << "address = 0x" << std::hex << addr.address << std::dec << ", file = " << (file ? file->name.toStdString() : "") << ":" << addr.line << "\n";
+//  }
+
+  std::cout << "loaded " << lineTable.files.size() << "files, " << lineTable.lines.size() << " addr2line infos" << std::endl;
+
+  return Result<DwarfInfo::LineTable, QString>::with_value(std::move(lineTable));
+}
+
+
 Result<DwarfLoader, QString> DwarfLoader::openFile(const QString &file) {
   int fd = open(file.toUtf8().data(), O_RDONLY);
   if (fd < 0) {
@@ -925,7 +1038,12 @@ Result<DwarfInfo, QString> DwarfLoader::load() {
         return Result<DwarfInfo, QString>::with_error(std::move(functions).into_error());
       }
 
-      return Result<DwarfInfo, QString>::with_value(DwarfInfo(std::move(file), std::move(buildId), std::move(functions).into_value()));
+      auto lineTable = generate_line_table(debug_info);
+      if (lineTable.is_error()) {
+        return Result<DwarfInfo, QString>::with_error(std::move(lineTable).into_error());
+      }
+
+      return Result<DwarfInfo, QString>::with_value(DwarfInfo(std::move(file), std::move(buildId), std::move(functions).into_value(), std::move(lineTable).into_value()));
     }
     case DW_DLV_NO_ENTRY: {
       QString msg("dwarf_elf_init() -> no_entry");
@@ -957,263 +1075,8 @@ uint64_t DwarfInfo::getBuildId() {
   return num;
 }
 
-
 static int
-read_line_data(UNUSEDARG Dwarf_Debug dbg,
-               struct target_data_s *td,
-               Dwarf_Error *errp) {
-  int res = 0;
-  Dwarf_Unsigned line_version = 0;
-  Dwarf_Small table_type = 0;
-  Dwarf_Line_Context line_context = 0;
-  Dwarf_Signed i = 0;
-  Dwarf_Signed baseindex = 0;
-  Dwarf_Signed endindex = 0;
-  Dwarf_Signed file_count = 0;
-  Dwarf_Unsigned dirindex = 0;
-
-  res = dwarf_srclines_b(td->td_cu_die, &line_version,
-                         &table_type, &line_context, errp);
-  if (res != DW_DLV_OK) {
-    return res;
-  }
-  if (td->td_print_details) {
-    printf(" Srclines: linetable version %" DW_PR_DUu
-           " table count %d\n", line_version, table_type);
-  }
-  if (table_type == 0) {
-    /* There are no lines here, just table header and names. */
-    int sres = 0;
-
-    sres = dwarf_srclines_files_indexes(line_context,
-                                        &baseindex, &file_count, &endindex, errp);
-    if (sres != DW_DLV_OK) {
-      dwarf_srclines_dealloc_b(line_context);
-      line_context = 0;
-      return sres;
-    }
-    if (td->td_print_details) {
-      printf("  Filenames base index %" DW_PR_DSd
-             " file count %" DW_PR_DSd
-             " endindex %" DW_PR_DSd "\n",
-             baseindex, file_count, endindex);
-    }
-    for (i = baseindex; i < endindex; i++) {
-      Dwarf_Unsigned modtime = 0;
-      Dwarf_Unsigned flength = 0;
-      Dwarf_Form_Data16 *md5data = 0;
-      int vres = 0;
-      const char *name = 0;
-
-      vres = dwarf_srclines_files_data_b(line_context, i,
-                                         &name, &dirindex, &modtime, &flength,
-                                         &md5data, errp);
-      if (vres != DW_DLV_OK) {
-        dwarf_srclines_dealloc_b(line_context);
-        line_context = 0;
-        /* something very wrong. */
-        return vres;
-      }
-      if (td->td_print_details) {
-        printf("  [%" DW_PR_DSd "] "
-               " directory index %" DW_PR_DUu
-               " %s \n", i, dirindex, name);
-      }
-    }
-    dwarf_srclines_dealloc_b(line_context);
-    return DW_DLV_OK;
-  } else if (table_type == 1) {
-    const char *dir_name = 0;
-    int sres = 0;
-    Dwarf_Line *linebuf = 0;
-    Dwarf_Signed linecount = 0;
-    Dwarf_Signed dir_count = 0;
-    Dwarf_Addr prev_lineaddr = 0;
-    Dwarf_Unsigned prev_lineno = 0;
-    char *prev_linesrcfile = 0;
-
-    sres = dwarf_srclines_files_indexes(line_context,
-                                        &baseindex, &file_count, &endindex, errp);
-    if (sres != DW_DLV_OK) {
-      dwarf_srclines_dealloc_b(line_context);
-      line_context = 0;
-      return sres;
-    }
-    if (td->td_print_details) {
-      printf("  Filenames base index %" DW_PR_DSd
-             " file count %" DW_PR_DSd
-             " endindex %" DW_PR_DSd "\n",
-             baseindex, file_count, endindex);
-    }
-    for (i = baseindex; i < endindex; i++) {
-      Dwarf_Unsigned dirindexb = 0;
-      Dwarf_Unsigned modtime = 0;
-      Dwarf_Unsigned flength = 0;
-      Dwarf_Form_Data16 *md5data = 0;
-      int vres = 0;
-      const char *name = 0;
-
-      vres = dwarf_srclines_files_data_b(line_context, i,
-                                         &name, &dirindexb, &modtime, &flength,
-                                         &md5data, errp);
-      if (vres != DW_DLV_OK) {
-        dwarf_srclines_dealloc_b(line_context);
-        line_context = 0;
-        /* something very wrong. */
-        return vres;
-      }
-      if (td->td_print_details) {
-        printf("  [%" DW_PR_DSd "] "
-               " directory index %" DW_PR_DUu
-               " file: %s \n", i, dirindexb, name);
-      }
-    }
-    sres = dwarf_srclines_include_dir_count(line_context,
-                                            &dir_count, errp);
-    if (sres != DW_DLV_OK) {
-      dwarf_srclines_dealloc_b(line_context);
-      line_context = 0;
-      return sres;
-    }
-    if (td->td_print_details) {
-      printf("  Directories count: %" DW_PR_DSd "\n",
-             dir_count);
-    }
-
-    for (i = 1; i <= dir_count; ++i) {
-      dir_name = 0;
-      sres = dwarf_srclines_include_dir_data(line_context,
-                                             i, &dir_name, errp);
-      if (sres == DW_DLV_ERROR) {
-        dwarf_srclines_dealloc_b(line_context);
-        line_context = 0;
-        return sres;
-      }
-      if (sres == DW_DLV_NO_ENTRY) {
-        printf("Something wrong in dir tables line %d %s\n",
-               __LINE__, __FILE__);
-        break;
-      }
-      if (td->td_print_details) {
-        printf("  [%" DW_PR_DSd "] directory: "
-               " %s \n", i, dir_name);
-      }
-    }
-
-    /*  For this case where we have a line table we will likely
-        wish to get the line details: */
-    sres = dwarf_srclines_from_linecontext(line_context,
-                                           &linebuf, &linecount,
-                                           errp);
-    if (sres != DW_DLV_OK) {
-      dwarf_srclines_dealloc_b(line_context);
-      line_context = 0;
-      return sres;
-    }
-    /* The lines are normal line table lines. */
-    for (i = 0; i < linecount; ++i) {
-      Dwarf_Addr lineaddr = 0;
-      Dwarf_Unsigned filenum = 0;
-      Dwarf_Unsigned lineno = 0;
-      char *linesrcfile = 0;
-
-      sres = dwarf_lineno(linebuf[i], &lineno, errp);
-      if (sres == DW_DLV_ERROR) {
-        return sres;
-      }
-      sres = dwarf_line_srcfileno(linebuf[i], &filenum, errp);
-      if (sres == DW_DLV_ERROR) {
-        return sres;
-      }
-      if (filenum) {
-        filenum -= 1;
-      }
-      sres = dwarf_lineaddr(linebuf[i], &lineaddr, errp);
-      if (sres == DW_DLV_ERROR) {
-        return sres;
-      }
-      sres = dwarf_linesrc(linebuf[i], &linesrcfile, errp);
-      if (td->td_print_details) {
-        printf("  [%" DW_PR_DSd "] "
-               " address 0x%" DW_PR_DUx
-               " filenum %" DW_PR_DUu
-               " lineno %" DW_PR_DUu
-               " %s \n", i, lineaddr, filenum, lineno, linesrcfile);
-      }
-      if (lineaddr > td->td_target_pc) {
-        /* Here we detect the right source and line */
-        td->td_subprog_lineaddr = prev_lineaddr;
-        td->td_subprog_lineno = prev_lineno;
-        td->td_subprog_srcfile = prev_linesrcfile;
-        return DW_DLV_OK;
-      }
-      prev_lineaddr = lineaddr;
-      prev_lineno = lineno;
-      if (prev_linesrcfile) {
-        dwarf_dealloc(dbg, prev_linesrcfile, DW_DLA_STRING);
-      }
-      prev_linesrcfile = linesrcfile;
-    }
-    /*  Here we detect the right source and line (last such
-        in this subprogram) */
-    td->td_subprog_lineaddr = prev_lineaddr;
-    td->td_subprog_lineno = prev_lineno;
-    td->td_subprog_srcfile = prev_linesrcfile;
-    dwarf_srclines_dealloc_b(line_context);
-    return DW_DLV_OK;
-
-  }
-  return DW_DLV_ERROR;
-#if 0
-  /* ASSERT: table_type == 2,
-    Experimental two-level line table. Version 0xf006
-    We do not define the meaning of this non-standard
-    set of tables here. */
-    /*  For ’something C’ (two-level line tables)
-        one codes something like this
-        Note that we do not define the meaning
-        or use of two-level li
-        tables as these are experimental,
-        not standard DWARF. */
-    sres = dwarf_srclines_two_level_from_linecontext(line_context,
-        &linebuf,&linecount,
-        &linebuf_actuals,&linecount_actuals,
-        &err);
-    if (sres == DW_DLV_OK) {
-        for (i = 0; i < linecount; ++i) {
-            /*  use linebuf[i], these are
-                the ’logicals’ entries. */
-        }
-        for (i = 0; i < linecount_actuals; ++i) {
-            /*  use linebuf_actuals[i],
-                these are the actuals entries */
-        }
-        dwarf_srclines_dealloc_b(line_context);
-        line_context = 0;
-        linebuf = 0;
-        linecount = 0;
-        linebuf_actuals = 0;
-        linecount_actuals = 0;
-    } else if (sres == DW_DLV_NO_ENTRY) {
-        dwarf_srclines_dealloc_b(line_context);
-        line_context = 0;
-        linebuf = 0;
-        linecount = 0;
-        linebuf_actuals = 0;
-        linecount_actuals = 0;
-        return sres;
-    } else { /*DW_DLV_ERROR */
-        return sres;
-    }
-#endif /* 0 */
-}
-
-
-static int
-getlowhighpc(UNUSEDARG Dwarf_Debug dbg,
-             UNUSEDARG struct target_data_s *td,
-             Dwarf_Die die,
-             UNUSEDARG int level,
+getlowhighpc(Dwarf_Die die,
              int *have_pc_range,
              Dwarf_Addr *lowpc_out,
              Dwarf_Addr *highpc_out,
