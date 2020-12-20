@@ -11,7 +11,7 @@
 #include <QPlainTextEdit>
 #include <QRegularExpression>
 #include <QTimer>
-#include "DebugTable.h"
+#include "../DebugTable.h"
 
 class CustomTraceDialog : public QDialog {
   Q_OBJECT

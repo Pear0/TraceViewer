@@ -49,16 +49,21 @@ add_executable(TraceViewer2 ${CAPNP_SRCS}
         src/Result.h
         src/TraceModel.cpp
         src/TraceModel.h
-        src/TraceViewWindow.cpp
-        src/TraceViewWindow.h
+        src/View/TraceViewWindow.cpp
+        src/View/TraceViewWindow.h
         src/FileLoader.cpp
         src/FileLoader.h
-        src/CustomTraceDialog.cpp
-        src/CustomTraceDialog.h
+        src/View/CustomTraceDialog.cpp
+        src/View/CustomTraceDialog.h
         src/QtOutputStream.cpp
         src/QtOutputStream.h
         src/View/TraceTimeline.cpp
-        src/View/TraceTimeline.h src/TraceHierarchyModel.cpp src/TraceHierarchyModel.h src/TraceHierarchyFilterProxy.cpp src/TraceHierarchyFilterProxy.h src/QtCustomUser.h)
+        src/View/TraceTimeline.h
+        src/Model/TraceHierarchyModel.cpp
+        src/Model/TraceHierarchyModel.h
+        src/Model/TraceHierarchyFilterProxy.cpp
+        src/Model/TraceHierarchyFilterProxy.h
+        src/QtCustomUser.h)
 
 set_target_properties(TraceViewer2 PROPERTIES
         MACOSX_BUNDLE TRUE

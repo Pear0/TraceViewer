@@ -9,8 +9,8 @@
 
 #include <QAbstractItemModel>
 
-#include "TraceData.h"
-#include "DebugTable.h"
+#include "../TraceData.h"
+#include "../DebugTable.h"
 
 #pragma clang diagnostic push
 #pragma ide diagnostic ignored "modernize-use-nodiscard"

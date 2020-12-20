@@ -3,7 +3,7 @@
 //
 
 #include "TraceViewWindow.h"
-#include "DebugTable.h"
+#include "../DebugTable.h"
 
 #include <QAction>
 #include <QHeaderView>

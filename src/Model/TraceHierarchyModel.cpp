@@ -6,7 +6,7 @@
 
 #include <QSize>
 
-#include "QtCustomUser.h"
+#include "../QtCustomUser.h"
 #include "TraceHierarchyModel.h"
 
 enum class ItemType {

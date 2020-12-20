@@ -1,24 +1,11 @@
 #include <QApplication>
-#include <QQuickView>
-#include <QVBoxLayout>
-#include <QTreeWidget>
-#include <QMenuBar>
 
 #include "ListeningThread.h"
 #include "DebugTable.h"
-#include "TraceModel.h"
-#include "DwarfInfo.h"
-#include "TraceViewWindow.h"
+#include "View/TraceViewWindow.h"
 
 int main(int argc, char **argv) {
   auto *app = new QApplication(argc, argv);
-
-//    QPushButton button("Hello world !");
-//    button.show();
-
-//    QQuickView view;
-//    view.setSource(QUrl::fromLocalFile("../TestComponent.qml"));
-//    view.show();
 
   const char *file_name = "/Users/will/Work/Pear0/cs3210-rustos/kern/build/kernel.elf";
 

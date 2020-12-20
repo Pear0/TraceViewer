@@ -14,14 +14,14 @@
 #include <QTimer>
 #include <QTreeWidget>
 
-#include "View/TraceTimeline.h"
-#include "TraceData.h"
-#include "DwarfInfo.h"
-#include "DebugTable.h"
-#include "FileLoader.h"
+#include "TraceTimeline.h"
+#include "../TraceData.h"
+#include "../DwarfInfo.h"
+#include "../DebugTable.h"
+#include "../FileLoader.h"
 #include "CustomTraceDialog.h"
-#include "TraceHierarchyModel.h"
-#include "TraceHierarchyFilterProxy.h"
+#include "../Model/TraceHierarchyModel.h"
+#include "../Model/TraceHierarchyFilterProxy.h"
 
 class TraceViewWindow : public QMainWindow {
 Q_OBJECT
