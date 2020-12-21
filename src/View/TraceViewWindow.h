@@ -26,7 +26,6 @@
 class TraceViewWindow : public QMainWindow {
 Q_OBJECT
 
-  QTimer *updateTimer = nullptr;
   TraceTimeline *traceTimeline = nullptr;
   QTreeView *treeWidget = nullptr;
   TraceHierarchyModel *traceModel = nullptr;
@@ -61,8 +60,6 @@ signals:
 
 private slots:
 
-  void updateTimerHit();
-
   void onFileChanged(const QString &path);
 
   void reloadTraces();
@@ -82,12 +79,7 @@ private slots:
   void openImportTracesDialog();
 
 private:
-  void performReload(const TraceData &data);
-
   void createMenus();
-
-  QList<QString> generateFunctionStack(const TraceEvent &event);
-
 
 };
 
