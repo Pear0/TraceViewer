@@ -6,7 +6,7 @@
 #include "TraceHierarchyFilterProxy.h"
 
 TraceHierarchyFilterProxy::TraceHierarchyFilterProxy(QObject *parent) : QSortFilterProxyModel(parent) {
-  setSortRole(UserQt::UserNumericRole);
+  setSortRole(UserQt::UserSortRole);
 }
 
 TraceHierarchyFilterProxy::~TraceHierarchyFilterProxy() = default;

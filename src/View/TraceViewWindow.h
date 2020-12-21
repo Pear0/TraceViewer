@@ -42,7 +42,7 @@ Q_OBJECT
   QActionGroup *traceOrderGroup = nullptr;
   QAction *traceOrderTopDownAct = nullptr;
   QAction *traceOrderBottomUpAct = nullptr;
-  QAction *traceOrderAllFuncsAct = nullptr;
+  QAction *traceOrderTopFunctionsAct = nullptr;
   QAction *traceShowInlinedFuncsAct = nullptr;
   QAction *customTraceWindowAct = nullptr;
 
@@ -66,6 +66,12 @@ private slots:
   void onFileChanged(const QString &path);
 
   void reloadTraces();
+
+  void tracesBottomUpTriggered();
+
+  void tracesTopDownTriggered();
+
+  void showInlineFuncsTriggered();
 
   void fileLoaded(QString path);
 

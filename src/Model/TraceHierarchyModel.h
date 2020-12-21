@@ -18,9 +18,15 @@
 class TraceHierarchyModel : public QAbstractItemModel {
   struct SymbolCache;
   struct HierarchyItem;
-  struct RawAddressItem;
-  struct FunctionItem;
 
+public:
+  enum class ViewPerspective {
+    TopDown, // caller first
+    BottomUp, // caller last
+    TopFunctions, // bottom up but all functions are top level
+  };
+
+private:
   Q_OBJECT
 
   std::shared_ptr<TraceData> traceData;
@@ -36,6 +42,10 @@ private slots:
   void tracesChanged();
 
 protected:
+  void generateHierarchyItems(std::vector<HierarchyItem> &items, const TraceEvent &event, const TraceFrame &frame) const;
+
+  void updateModelTraces(ViewPerspective viewPerspective, bool showInlineFuncs);
+
   QModelIndex selfModelIndex(HierarchyItem *item, int column = 0) const;
 
 public:
@@ -50,6 +60,14 @@ public:
   QVariant headerData(int section, Qt::Orientation orientation, int role) const override;
 
   QVariant data(const QModelIndex &index, int role) const override;
+
+  void setViewPerspective(ViewPerspective viewPerspective);
+
+  void setShowInlineFuncs(bool showInlineFuncs);
+
+  ViewPerspective getViewPerspective();
+
+  bool getShowInlineFuncs();
 
 };
 

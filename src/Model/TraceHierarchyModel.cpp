@@ -4,6 +4,7 @@
 
 #include <unordered_set>
 
+#include <QPalette>
 #include <QSize>
 
 #include "../QtCustomUser.h"
@@ -20,17 +21,17 @@ struct TraceHierarchyModel::HierarchyItem {
   HierarchyItem *parent{nullptr};
   int selfIndex{-1};
   size_t count{0};
+  size_t selfCount{0};
   ItemType itemType{ItemType::Invalid};
 
   // RawAddress fields
   uint64_t address{0};
 
   // Function fields
-
   AbstractFunctionInfo *functionInfo{nullptr};
 
   // Invalid
-  HierarchyItem() {}
+  HierarchyItem() = default;
 
   explicit HierarchyItem(uint64_t address)
           : itemType(ItemType::RawAddress), address(address) {}
@@ -42,7 +43,7 @@ struct TraceHierarchyModel::HierarchyItem {
 
   virtual ~HierarchyItem() = default;
 
-  HierarchyItem& operator=(HierarchyItem &&) = default;
+  HierarchyItem &operator=(HierarchyItem &&) = default;
 
   [[nodiscard]] bool targetMatch(const HierarchyItem *other) const {
     return itemType == other->itemType && address == other->address && functionInfo == other->functionInfo;
@@ -54,16 +55,22 @@ struct TraceHierarchyModel::HierarchyItem {
   }
 
   [[nodiscard]] QString getName() const {
-    if (itemType == ItemType::Function)
+    if (itemType == ItemType::Function) {
+      if (functionInfo->isInline())
+        return QString("~") + functionInfo->getFullName();
+
       return functionInfo->getFullName();
-    else
+    } else {
       return QString("0x") + QString::number(address, 16);
+    }
   }
 };
 
 struct TraceHierarchyModel::SymbolCache {
   HierarchyItem root{std::numeric_limits<uint64_t>::max()};
-  uint64_t lastTraceChangeCount { 0 };
+  uint64_t lastTraceChangeCount{0};
+  ViewPerspective viewPerspective{ViewPerspective::BottomUp};
+  bool showInlineFuncs { true };
 };
 
 TraceHierarchyModel::TraceHierarchyModel(
@@ -88,9 +95,59 @@ QModelIndex TraceHierarchyModel::selfModelIndex(HierarchyItem *item, int column)
 
 
 void TraceHierarchyModel::tracesChanged() {
+  updateModelTraces(symbolCache->viewPerspective, symbolCache->showInlineFuncs);
+}
+
+void TraceHierarchyModel::generateHierarchyItems(std::vector<HierarchyItem> &items, const TraceEvent &event,
+                                                 const TraceFrame &frame) const {
+  items.clear();
+
+  if (auto dwarf = debugTable->loadedFiles.find(event.build_id); dwarf != debugTable->loadedFiles.end()) {
+    if (auto func = dwarf->second.resolve_address(frame.pc); func) {
+
+      items.emplace_back(func->first);
+
+      if (symbolCache->showInlineFuncs) {
+        for (auto *inlineFunc : func->second) {
+          items.emplace_back(inlineFunc);
+        }
+      }
+
+      return;
+    }
+  }
+
+  items.emplace_back(frame.pc);
+}
+
+template <typename Container, typename Func>
+static void iterateContainer(Container &container, bool reverse, Func func) {
+  if (reverse) {
+    for (auto it = container.rbegin(); it != container.rend(); ++it) {
+      func(*it, (it+1) != container.rend());
+    }
+  } else {
+    for (auto it = container.begin(); it != container.end(); ++it) {
+      func(*it, (it+1) != container.end());
+    }
+  }
+}
+
+void TraceHierarchyModel::updateModelTraces(ViewPerspective viewPerspective, bool showInlineFuncs) {
+  bool needsReset = viewPerspective != symbolCache->viewPerspective || showInlineFuncs != symbolCache->showInlineFuncs;
 
   const std::lock_guard<std::mutex> g(traceData->lock);
   const std::lock_guard<std::mutex> g2(debugTable->lock);
+
+  if (needsReset) {
+    beginResetModel();
+    symbolCache->viewPerspective = viewPerspective;
+    symbolCache->showInlineFuncs = showInlineFuncs;
+    symbolCache->root.children.clear();
+    symbolCache->lastTraceChangeCount = 0;
+  }
+
+  std::vector<HierarchyItem> currentHierarchyItems;
 
   for (auto &event : traceData->events) {
     // We've ingested this event already
@@ -101,54 +158,71 @@ void TraceHierarchyModel::tracesChanged() {
 
     HierarchyItem *parent = &symbolCache->root;
 
-    for (auto &frame : event.frames) {
-      HierarchyItem item;
-      if (auto dwarf = debugTable->loadedFiles.find(event.build_id); dwarf != debugTable->loadedFiles.end()) {
-        if (auto func = dwarf->second.resolve_address(frame.pc); func) {
+    // frames are bottom-up by default
+    iterateContainer(event.frames, viewPerspective != ViewPerspective::BottomUp, [&](auto &frame, bool hasMoreFrames) {
+      generateHierarchyItems(currentHierarchyItems, event, frame);
 
-          item = HierarchyItem(func->first);
+      iterateContainer(currentHierarchyItems, viewPerspective != ViewPerspective::TopDown, [&](auto &item, bool hasMoreItems) {
+
+        // Find an existing child that matches.
+        HierarchyItem *matchedItem = nullptr;
+        for (auto &child : parent->children) {
+          if (child->targetMatch(&item)) {
+            matchedItem = child.get();
+            break;
+          }
         }
-      }
-      if (item.itemType == ItemType::Invalid)
-        item = HierarchyItem(frame.pc);
 
-      // Find an existing child that matches.
-      HierarchyItem *matchedItem = nullptr;
-      for (auto &child : parent->children) {
-        if (child->targetMatch(&item)) {
-          matchedItem = child.get();
-          break;
+        // No child matches, add it
+        if (matchedItem == nullptr) {
+          item.parent = parent;
+          auto index = item.selfIndex = parent->children.size();
+
+          if (!needsReset) {
+            auto parentModelIndex = selfModelIndex(parent);
+            beginInsertRows(parentModelIndex, index, index);
+          }
+
+          auto itemPtr = std::make_unique<HierarchyItem>(std::move(item));
+          matchedItem = itemPtr.get();
+          parent->children.push_back(std::move(itemPtr));
+
+          if (!needsReset) {
+            endInsertRows();
+          }
         }
-      }
 
-      // No child matches, add it
-      if (matchedItem == nullptr) {
-        item.parent = parent;
-        auto index = item.selfIndex = parent->children.size();
+        matchedItem->count++;
 
-        auto parentModelIndex = selfModelIndex(parent);
+        if (!needsReset) {
+          // Update the count column
+          auto itemIndex = selfModelIndex(matchedItem, 1);
+          dataChanged(itemIndex, itemIndex);
+        }
 
-        beginInsertRows(parentModelIndex, index, index);
+        if (!hasMoreFrames && !hasMoreItems) {
+          // contribute to self count
 
-        auto itemPtr = std::make_unique<HierarchyItem>(std::move(item));
-        matchedItem = itemPtr.get();
-        parent->children.push_back(std::move(itemPtr));
+          matchedItem->selfCount++;
 
-        endInsertRows();
-      }
+          if (!needsReset) {
+            auto itemIndex = selfModelIndex(matchedItem, 2);
+            dataChanged(itemIndex, itemIndex);
+          }
+        }
 
-      matchedItem->count++;
+        // follow the chain...
+        parent = matchedItem;
 
-      // Update the count column
-      auto itemIndex = selfModelIndex(matchedItem, 1);
-      dataChanged(itemIndex, itemIndex);
-
-      // follow the chain...
-      parent = matchedItem;
-    }
+      });
+    });
   }
 
   symbolCache->lastTraceChangeCount = traceData->change_count;
+
+  if (needsReset) {
+    endResetModel();
+  }
 }
 
 QModelIndex TraceHierarchyModel::index(int row, int column, const QModelIndex &parent) const {
@@ -203,16 +277,46 @@ QVariant TraceHierarchyModel::data(const QModelIndex &index, int role) const {
 
   switch (role) {
     case Qt::DisplayRole:
-      if (index.column() == 0)
-        return item->getName();
-
-      return QString::number(item->count);
-    case UserQt::UserNumericRole:
-      return (int) item->count;
-
+      switch (index.column()) {
+        case 0:
+          return item->getName();
+        case 1:
+          return QString::number(item->count);
+        case 2:
+          return QString::number(item->selfCount);
+        default:
+          return QString("??? col: ") + QString::number(index.column());
+      }
+    case UserQt::UserSortRole:
+      switch (index.column()) {
+        case 0:
+          return item->getName();
+        case 1:
+          return (int) item->count;
+        case 2:
+          return (int) item->selfCount;
+        default:
+          return QVariant();
+      }
     default:
       return QVariant();
   }
+}
+
+void TraceHierarchyModel::setViewPerspective(TraceHierarchyModel::ViewPerspective viewPerspective) {
+  updateModelTraces(viewPerspective, symbolCache->showInlineFuncs);
+}
+
+void TraceHierarchyModel::setShowInlineFuncs(bool showInlineFuncs) {
+  updateModelTraces(symbolCache->viewPerspective, showInlineFuncs);
+}
+
+TraceHierarchyModel::ViewPerspective TraceHierarchyModel::getViewPerspective() {
+  return symbolCache->viewPerspective;
+}
+
+bool TraceHierarchyModel::getShowInlineFuncs() {
+  return symbolCache->showInlineFuncs;
 }
 
 

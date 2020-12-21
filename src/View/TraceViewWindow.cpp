@@ -57,6 +57,8 @@ TraceViewWindow::TraceViewWindow(std::shared_ptr<TraceData> trace_data,
   // treeWidget->setColumnCount(2);
 
   traceModel = new TraceHierarchyModel(this->trace_data, this->debugTable, this);
+  traceModel->setViewPerspective(TraceHierarchyModel::ViewPerspective::TopDown);
+  traceModel->setShowInlineFuncs(false);
 
   traceFilter = new TraceHierarchyFilterProxy(this);
   traceFilter->setSourceModel(traceModel);
@@ -170,7 +172,7 @@ void TraceViewWindow::performReload(const TraceData &data) {
     }
 
     QList<QString> subList;
-    if (traceOrderAllFuncsAct->isChecked()) {
+    if (traceOrderTopFunctionsAct->isChecked()) {
       for (size_t i = 0; i < list.size(); i++) {
         subList.clear();
         for (size_t j = i; j < list.size(); j++) {
@@ -265,18 +267,19 @@ void TraceViewWindow::createMenus() {
   traceOrderTopDownAct = new QAction("Top Down", traceOrderGroup);
   traceOrderTopDownAct->setShortcut(QKeySequence("Ctrl+7"));
   traceOrderTopDownAct->setCheckable(true);
-  traceOrderTopDownAct->setChecked(true);
+  traceOrderTopDownAct->setChecked(traceModel->getViewPerspective() == TraceHierarchyModel::ViewPerspective::TopDown);
   traceOrderBottomUpAct = new QAction("Bottom Up", traceOrderGroup);
   traceOrderBottomUpAct->setShortcut(QKeySequence("Ctrl+8"));
   traceOrderBottomUpAct->setCheckable(true);
-
-  traceOrderAllFuncsAct = new QAction("All First", this);
-  traceOrderAllFuncsAct->setCheckable(true);
+  traceOrderBottomUpAct->setChecked(traceModel->getViewPerspective() == TraceHierarchyModel::ViewPerspective::BottomUp);
+  traceOrderTopFunctionsAct = new QAction("Top Functions", traceOrderGroup);
+  traceOrderTopFunctionsAct->setCheckable(true);
+  traceOrderTopFunctionsAct->setChecked(traceModel->getViewPerspective() == TraceHierarchyModel::ViewPerspective::TopFunctions);
 
   traceShowInlinedFuncsAct = new QAction("Show Inlined Funcs", this);
   traceShowInlinedFuncsAct->setShortcut(QKeySequence("Ctrl+I"));
   traceShowInlinedFuncsAct->setCheckable(true);
-  traceShowInlinedFuncsAct->setChecked(true);
+  traceShowInlinedFuncsAct->setChecked(traceModel->getShowInlineFuncs());
 
   customTraceWindowAct = new QAction("Custom Trace", this);
   customTraceWindowAct->setShortcut(QKeySequence("Ctrl+9"));
@@ -293,9 +296,9 @@ void TraceViewWindow::createMenus() {
     auto *orderMenu = viewMenu->addMenu("Trace Order");
     orderMenu->addAction(traceOrderTopDownAct);
     orderMenu->addAction(traceOrderBottomUpAct);
+    orderMenu->addAction(traceOrderTopFunctionsAct);
   }
 
-  viewMenu->addAction(traceOrderAllFuncsAct);
   viewMenu->addAction(traceShowInlinedFuncsAct);
 
   viewMenu->addSeparator();
@@ -308,10 +311,10 @@ void TraceViewWindow::createMenus() {
   connect(importTracesAct, &QAction::triggered, this, &TraceViewWindow::openImportTracesDialog);
 
   // reloadTraces() inspects the current ordering, so all we need is to trigger a reload.
-  connect(traceOrderTopDownAct, &QAction::triggered, this, &TraceViewWindow::reloadTraces);
-  connect(traceOrderBottomUpAct, &QAction::triggered, this, &TraceViewWindow::reloadTraces);
-  connect(traceOrderAllFuncsAct, &QAction::triggered, this, &TraceViewWindow::reloadTraces);
-  connect(traceShowInlinedFuncsAct, &QAction::triggered, this, &TraceViewWindow::reloadTraces);
+  connect(traceOrderTopDownAct, &QAction::triggered, this, &TraceViewWindow::tracesTopDownTriggered);
+  connect(traceOrderBottomUpAct, &QAction::triggered, this, &TraceViewWindow::tracesBottomUpTriggered);
+  connect(traceOrderTopFunctionsAct, &QAction::triggered, this, &TraceViewWindow::reloadTraces);
+  connect(traceShowInlinedFuncsAct, &QAction::triggered, this, &TraceViewWindow::showInlineFuncsTriggered);
 
   connect(customTraceWindowAct, &QAction::triggered, this, &TraceViewWindow::openCustomTraceDialog);
 
@@ -325,6 +328,18 @@ void TraceViewWindow::reloadTraces() {
 
   // debugTable->loadFile("/Users/will/Work/Pear0/cs3210-rustos/kern/build/kernel.elf", true);
 
+}
+
+void TraceViewWindow::tracesBottomUpTriggered() {
+  traceModel->setViewPerspective(TraceHierarchyModel::ViewPerspective::BottomUp);
+}
+
+void TraceViewWindow::tracesTopDownTriggered() {
+  traceModel->setViewPerspective(TraceHierarchyModel::ViewPerspective::TopDown);
+}
+
+void TraceViewWindow::showInlineFuncsTriggered() {
+  traceModel->setShowInlineFuncs(traceShowInlinedFuncsAct->isChecked());
 }
 
 void TraceViewWindow::fileLoaded(QString path) {

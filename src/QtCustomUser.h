@@ -10,7 +10,7 @@
 namespace UserQt {
 
 enum UserItemDataRole {
-  UserNumericRole = Qt::UserRole,
+  UserSortRole = Qt::UserRole,
 
 };
 
