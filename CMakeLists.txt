@@ -15,6 +15,7 @@ set(LIBDWARF_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/lib/libdwarf")
 
 # find_package(LibDwarf REQUIRED)
 find_package(LibElf REQUIRED)
+find_package(LibCapstone REQUIRED)
 find_package(CapnProto REQUIRED)
 
 set(OUTPUT_LIB "${CMAKE_BINARY_DIR}/libdwarf.a")
@@ -35,6 +36,7 @@ include_directories(lib/libdwarf/build/libdwarf)
 include_directories(lib/libdwarf/libdwarf)
 include_directories(${LIBELF_INCLUDE_DIRS})
 include_directories(${LIBCAPNP_INCLUDE_DIRS})
+include_directories(${LIBCAPSTONE_INCLUDE_DIRS})
 
 add_executable(TraceViewer2 ${CAPNP_SRCS}
         src/main.cpp
@@ -61,7 +63,7 @@ add_executable(TraceViewer2 ${CAPNP_SRCS}
         src/Model/TraceHierarchyModel.h
         src/Model/TraceHierarchyFilterProxy.cpp
         src/Model/TraceHierarchyFilterProxy.h
-        src/QtCustomUser.h)
+        src/QtCustomUser.h src/Disassembler/Disassembler.cpp src/Disassembler/Disassembler.h)
 
 set_target_properties(TraceViewer2 PROPERTIES
         MACOSX_BUNDLE TRUE
@@ -75,5 +77,6 @@ target_link_directories(TraceViewer2 PRIVATE "/usr/local/lib")  # for libelf.a
 target_link_directories(TraceViewer2 PRIVATE "lib/libdwarf/build/libdwarf/.libs")  # for libdwarf.a
 
 # Link the library to the executable
-target_link_libraries(TraceViewer2 PRIVATE Qt5::Core Qt5::Widgets Qt5::Quick dwarf z ${LIBELF_LIBRARIES})
+target_link_libraries(TraceViewer2 PRIVATE Qt5::Core Qt5::Widgets Qt5::Quick)
+target_link_libraries(TraceViewer2 PRIVATE dwarf z ${LIBELF_LIBRARIES} ${LIBCAPSTONE_LIBRARIES})
 target_link_libraries(TraceViewer2 PRIVATE CapnProto::capnp-rpc)
