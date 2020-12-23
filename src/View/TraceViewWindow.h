@@ -83,6 +83,8 @@ private slots:
 
   void openImportTracesDialog();
 
+  void traceSelectionChanged(const QModelIndex &current, const QModelIndex &previous);
+
 private:
   void createMenus();
 

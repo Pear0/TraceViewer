@@ -24,6 +24,8 @@ struct TraceHierarchyModel::HierarchyItem {
   size_t selfCount{0};
   ItemType itemType{ItemType::Invalid};
 
+  std::unordered_map<uint64_t, size_t> addrCount;
+
   // RawAddress fields
   uint64_t address{0};
 
@@ -193,6 +195,7 @@ void TraceHierarchyModel::updateModelTraces(ViewPerspective viewPerspective, boo
         }
 
         matchedItem->count++;
+        matchedItem->addrCount[frame.pc]++;
 
         if (!needsReset) {
           // Update the count column
@@ -319,6 +322,15 @@ bool TraceHierarchyModel::getShowInlineFuncs() {
   return symbolCache->showInlineFuncs;
 }
 
+AbstractFunctionInfo *TraceHierarchyModel::getFunctionInfo(const QModelIndex &index) const {
+  auto item = static_cast<HierarchyItem *>(index.internalPointer());
+  return item->itemType == ItemType::Function ? item->functionInfo : nullptr;
+}
+
+const std::unordered_map<uint64_t, size_t> &TraceHierarchyModel::getAddrCounts(const QModelIndex &index) const {
+  auto item = static_cast<HierarchyItem *>(index.internalPointer());
+  return item->addrCount;
+}
 
 
 

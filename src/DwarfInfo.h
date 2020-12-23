@@ -7,6 +7,7 @@
 
 #include <ctime>
 #include <iostream>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -18,6 +19,7 @@
 
 struct ConcreteFunctionInfo;
 struct InlinedFunctionInfo;
+struct DwarfLoader;
 
 struct AbstractFunctionInfo {
   virtual bool isInline() = 0;
@@ -49,6 +51,7 @@ struct ConcreteFunctionInfo : public AbstractFunctionInfo {
   Dwarf_Off die_offset = 0;
   const char *name = nullptr;
   QString full_name;
+  uint64_t buildId = 0;
 
   std::vector<std::unique_ptr<InlinedFunctionInfo>> inline_functions;
 
@@ -66,6 +69,9 @@ struct ConcreteFunctionInfo : public AbstractFunctionInfo {
 };
 
 class DwarfInfo {
+  struct Internal;
+  friend DwarfLoader;
+
 public:
   struct LineFileInfo {
     QString name;
@@ -86,6 +92,7 @@ public:
 private:
   std::vector<uint8_t> buildId;
   std::vector<std::unique_ptr<ConcreteFunctionInfo>> functions;
+  std::unique_ptr<Internal> internal;
 
   LineTable lineTable;
 
@@ -93,14 +100,15 @@ public:
   QString file;
   std::time_t loaded_time;
 
-  explicit DwarfInfo(QString &&file, std::vector<uint8_t> &&buildId, std::vector<std::unique_ptr<ConcreteFunctionInfo>> &&functions, LineTable &&lineTable)
-          : file(std::move(file)), loaded_time(std::time(nullptr)), buildId(std::move(buildId)), functions(std::move(functions)), lineTable(std::move(lineTable)) {}
+  explicit DwarfInfo(QString &&file, std::vector<uint8_t> &&buildId, std::vector<std::unique_ptr<ConcreteFunctionInfo>> &&functions, LineTable &&lineTable);
 
   explicit DwarfInfo(const DwarfInfo &other) = delete;
 
-  DwarfInfo(DwarfInfo &&other) = default;
+  DwarfInfo(DwarfInfo &&other);
 
   virtual ~DwarfInfo();
+
+  void readFromAddress(uint8_t *buffer, uint64_t address, size_t length);
 
   std::optional<std::pair<ConcreteFunctionInfo *, std::vector<InlinedFunctionInfo *>>> resolve_address(uint64_t address);
 

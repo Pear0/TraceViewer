@@ -69,6 +69,10 @@ public:
 
   bool getShowInlineFuncs();
 
+  AbstractFunctionInfo *getFunctionInfo(const QModelIndex &index) const;
+
+  const std::unordered_map<uint64_t, size_t> &getAddrCounts(const QModelIndex &index) const;
+
 };
 
 #pragma clang diagnostic pop

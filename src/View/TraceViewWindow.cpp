@@ -68,6 +68,8 @@ TraceViewWindow::TraceViewWindow(std::shared_ptr<TraceData> trace_data,
   fileLoader = new FileLoader(std::move(debugTable));
   fileLoader->moveToThread(fileLoaderThread);
 
+  connect(treeWidget->selectionModel(), &QItemSelectionModel::currentChanged, this, &TraceViewWindow::traceSelectionChanged);
+
   connect(fileWatcher, &QFileSystemWatcher::fileChanged, this, &TraceViewWindow::onFileChanged);
   connect(fileWatcher, &QFileSystemWatcher::fileChanged, fileLoader, &FileLoader::loadFile);
   connect(this, &TraceViewWindow::doLoadFile, fileLoader, &FileLoader::loadFile);
@@ -80,6 +82,7 @@ TraceViewWindow::TraceViewWindow(std::shared_ptr<TraceData> trace_data,
   mainLayout->addWidget(treeWidget, 1, 0);
   mainLayout->addWidget(asmView, 2, 0);
   mainLayout->setRowStretch(1, 1);
+  mainLayout->setRowStretch(2, 1);
 
   widget->setLayout(mainLayout);
 
@@ -218,6 +221,36 @@ void TraceViewWindow::openImportTracesDialog() {
   std::cout << "import file: " << fileName.toStdString() << "\n";
 
   trace_data->importFromFile(fileName);
+
+}
+
+void TraceViewWindow::traceSelectionChanged(const QModelIndex &current, const QModelIndex &previous) {
+
+  std::cout << "row: " << current.row() << ", col: " << current.column() << std::endl;
+
+  auto sourceIndex = traceFilter->mapToSource(current);
+  auto func = traceModel->getFunctionInfo(sourceIndex);
+  if (!func) {
+    std::cout << "null func!" << std::endl;
+    return;
+  }
+
+  if (auto *func2 = dynamic_cast<ConcreteFunctionInfo *>(func); func2 != nullptr) {
+    if (func2->ranges.empty()) {
+      std::cout << "no ranges for func" << std::endl;
+      return;
+    }
+    if (func2->ranges.size() != 1) {
+      std::cout << "multiple ranges" << std::endl;
+      return;
+    }
+
+    auto addrCounts = traceModel->getAddrCounts(sourceIndex);
+
+    auto [start, end] = func2->ranges.front();
+    asmModel->disassembleRegion(func2->buildId, start, end, &addrCounts);
+    std::cout << "disassembled ranges" << std::endl;
+  }
 
 }
 

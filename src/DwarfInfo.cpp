@@ -80,50 +80,6 @@ bool ranges_contains_address(const std::vector<std::pair<uint64_t, uint64_t>> &r
   return false;
 }
 
-struct srcfilesdata {
-  char **srcfiles;
-  Dwarf_Signed srcfilescount;
-  int srcfilesres;
-};
-struct target_data_s {
-  Dwarf_Debug td_dbg;
-  Dwarf_Unsigned td_target_pc;     /* from argv */
-  int td_print_details; /* from argv */
-  int td_reportallfound; /* from argv */
-  int td_print_report;
-
-  /*  cu die data. */
-  Dwarf_Unsigned td_cu_lowpc;
-  Dwarf_Unsigned td_cu_highpc;
-  int td_cu_haslowhighpc;
-  Dwarf_Die td_cu_die;
-  char *td_cu_name;
-  char *td_cu_comp_dir;
-  Dwarf_Unsigned td_cu_number;
-  struct srcfilesdata td_cu_srcfiles;
-  /*  Help deal with DW_AT_ranges */
-  /*  This is base offset of ranges, the value from
-      DW_AT_rnglists_base. */
-  Dwarf_Unsigned td_cu_ranges_base;
-
-  /*  Following subprog related. Offset has
-      tc_cu_ranges_base added in.   */
-  Dwarf_Off td_ranges_offset;
-  /*  DIE data of appropriate DIE */
-  /*  From DW_AT_name */
-  char *td_subprog_name;
-  Dwarf_Unsigned td_subprog_fileindex;
-  Dwarf_Die td_subprog_die;
-  Dwarf_Unsigned td_subprog_lowpc;
-  Dwarf_Unsigned td_subprog_highpc;
-  int td_subprog_haslowhighpc;
-  Dwarf_Unsigned td_subprog_lineaddr;
-  Dwarf_Unsigned td_subprog_lineno;
-  char *td_subprog_srcfile; /* dealloc */
-
-  int die_count;
-};
-
 struct CompilationUnitHeader {
   Dwarf_Unsigned header_length;
   Dwarf_Half version_stamp;
@@ -227,6 +183,17 @@ void ConcreteFunctionInfo::dump() {
   }
 }
 
+struct DwarfInfo::Internal {
+  int fd = 0;
+  Elf *elf = nullptr;
+};
+
+DwarfInfo::DwarfInfo(
+        QString &&file, std::vector<uint8_t> &&buildId, std::vector<std::unique_ptr<ConcreteFunctionInfo>> &&functions,
+        DwarfInfo::LineTable &&lineTable)
+        : file(std::move(file)), loaded_time(std::time(nullptr)), buildId(std::move(buildId)),
+          functions(std::move(functions)), lineTable(std::move(lineTable)), internal(std::make_unique<Internal>()) {}
+
 
 DwarfInfo::~DwarfInfo() {
 
@@ -234,7 +201,16 @@ DwarfInfo::~DwarfInfo() {
 //  if (res != DW_DLV_OK) {
 //    std::cout << "dwarf_finish failed!" << std::endl;
 //  }
+
+// TODO cleanup dwarf
+
+  if (internal && internal->fd >= 0) {
+    close(internal->fd);
+    internal->fd = -1;
+  }
 }
+
+DwarfInfo::DwarfInfo(DwarfInfo &&other) = default;
 
 static void dwarf_load_err(Dwarf_Error error, Dwarf_Ptr arg) {
   std::cout << "dwarf_load_err() called" << std::endl;
@@ -349,6 +325,9 @@ DwarfInfo::resolve_address(uint64_t address) {
         break;
       }
     }
+
+    // FIXME hack
+    func_it->get()->buildId = getBuildId();
 
     return {std::make_pair(func_it->get(), std::move(inline_stack))};
   }
@@ -907,7 +886,8 @@ static Result<DwarfInfo::LineTable, QString> generate_line_table(Dwarf_Debug deb
     TRY_ERROR(DwarfInfo::LineTable, debug_info, res, error);
 
     if (table_type != 1) {
-      std::cout << std::dec << "unexpected table_type = " << (int)table_type << ", line_version = " << line_version << std::endl;
+      std::cout << std::dec << "unexpected table_type = " << (int) table_type << ", line_version = " << line_version
+                << std::endl;
       continue;
     }
 
@@ -925,7 +905,7 @@ static Result<DwarfInfo::LineTable, QString> generate_line_table(Dwarf_Debug deb
       char *name = srcFiles[j];
       // std::cout << "file: " << name << std::endl;
 
-      lineTable.files.push_back(DwarfInfo::LineFileInfo{ QString(name), 0 });
+      lineTable.files.push_back(DwarfInfo::LineFileInfo{QString(name), 0});
 
       dwarf_dealloc(debug_info, name, DW_DLA_STRING);
     }
@@ -963,10 +943,10 @@ static Result<DwarfInfo::LineTable, QString> generate_line_table(Dwarf_Debug deb
 
       int32_t fileIndex = -1;
       if (fileIndexOffset + filenum < lineTable.files.size()) {
-        fileIndex = (int32_t)(fileIndexOffset + filenum);
+        fileIndex = (int32_t) (fileIndexOffset + filenum);
       }
 
-      lineTable.lines.push_back(DwarfInfo::LineInfo{ lineaddr, fileIndex, (uint32_t)lineno });
+      lineTable.lines.push_back(DwarfInfo::LineInfo{lineaddr, fileIndex, (uint32_t) lineno});
     }
 
     dwarf_srclines_dealloc_b(line_context);
@@ -981,7 +961,8 @@ static Result<DwarfInfo::LineTable, QString> generate_line_table(Dwarf_Debug deb
 //    std::cout << "address = 0x" << std::hex << addr.address << std::dec << ", file = " << (file ? file->name.toStdString() : "") << ":" << addr.line << "\n";
 //  }
 
-  std::cout << "loaded " << lineTable.files.size() << "files, " << lineTable.lines.size() << " addr2line infos" << std::endl;
+  std::cout << "loaded " << lineTable.files.size() << "files, " << lineTable.lines.size() << " addr2line infos"
+            << std::endl;
 
   return Result<DwarfInfo::LineTable, QString>::with_value(std::move(lineTable));
 }
@@ -1015,14 +996,7 @@ uint64_t DwarfLoader::getBuildId() {
   return num;
 }
 
-DwarfLoader::~DwarfLoader() {
-// TODO cleanup dwarf
-
-  if (fd >= 0) {
-    close(fd);
-    fd = -1;
-  }
-}
+DwarfLoader::~DwarfLoader() = default;
 
 Result<DwarfInfo, QString> DwarfLoader::load() {
   Dwarf_Error error;
@@ -1043,7 +1017,13 @@ Result<DwarfInfo, QString> DwarfLoader::load() {
         return Result<DwarfInfo, QString>::with_error(std::move(lineTable).into_error());
       }
 
-      return Result<DwarfInfo, QString>::with_value(DwarfInfo(std::move(file), std::move(buildId), std::move(functions).into_value(), std::move(lineTable).into_value()));
+      DwarfInfo info(std::move(file), std::move(buildId), std::move(functions).into_value(),
+                     std::move(lineTable).into_value());
+
+      info.internal->fd = fd;
+      info.internal->elf = elf;
+
+      return Result<DwarfInfo, QString>::with_value(std::move(info));
     }
     case DW_DLV_NO_ENTRY: {
       QString msg("dwarf_elf_init() -> no_entry");
@@ -1073,6 +1053,39 @@ uint64_t DwarfInfo::getBuildId() {
     num |= static_cast<uint64_t>(buildId[i]) << (i * 8);
   }
   return num;
+}
+
+void DwarfInfo::readFromAddress(uint8_t *buffer, uint64_t address, size_t length) {
+
+  Elf64_Phdr *first_phdr = elf64_getphdr(internal->elf);
+  size_t count;
+  elf_getphdrnum(internal->elf, &count);
+
+  for (size_t i = 0; i < count; i++) {
+    Elf64_Phdr *phdr = first_phdr + i;
+    if (phdr->p_type != PT_LOAD)
+      continue;
+
+    if (address < phdr->p_vaddr && address >= phdr->p_vaddr + phdr->p_memsz)
+      continue;
+
+    size_t amt = length;
+    if (address + length > phdr->p_vaddr + phdr->p_memsz)
+      amt = phdr->p_vaddr + phdr->p_memsz - address;
+
+    size_t offset = address - phdr->p_vaddr + phdr->p_offset;
+
+    lseek(internal->fd, offset, SEEK_SET);
+    auto amtRead = read(internal->fd, buffer, amt);
+    if (amtRead == length)
+      return;
+
+    buffer += amtRead;
+    address += amtRead;
+    length -= amtRead;
+    i = std::numeric_limits<size_t>::max(); // start from beginning again
+  }
+
 }
 
 static int
