@@ -40,30 +40,34 @@ include_directories(${LIBCAPSTONE_INCLUDE_DIRS})
 
 add_executable(TraceViewer2 ${CAPNP_SRCS}
         src/main.cpp
-        src/ListeningThread.cpp
-        src/ListeningThread.h
-        src/TraceData.cpp
-        src/TraceData.h
         src/DebugTable.cpp
         src/DebugTable.h
         src/DwarfInfo.cpp
         src/DwarfInfo.h
-        src/Result.h
-        src/View/TraceViewWindow.cpp
-        src/View/TraceViewWindow.h
         src/FileLoader.cpp
         src/FileLoader.h
-        src/View/CustomTraceDialog.cpp
-        src/View/CustomTraceDialog.h
+        src/ListeningThread.cpp
+        src/ListeningThread.h
+        src/QtCustomUser.h
         src/QtOutputStream.cpp
         src/QtOutputStream.h
-        src/View/TraceTimeline.cpp
-        src/View/TraceTimeline.h
+        src/Result.h
+        src/TraceData.cpp
+        src/TraceData.h
+        src/Disassembler/Disassembler.cpp
+        src/Disassembler/Disassembler.h
+        src/Model/DisassemblyModel.cpp
+        src/Model/DisassemblyModel.h
         src/Model/TraceHierarchyModel.cpp
         src/Model/TraceHierarchyModel.h
         src/Model/TraceHierarchyFilterProxy.cpp
         src/Model/TraceHierarchyFilterProxy.h
-        src/QtCustomUser.h src/Disassembler/Disassembler.cpp src/Disassembler/Disassembler.h)
+        src/View/CustomTraceDialog.cpp
+        src/View/CustomTraceDialog.h
+        src/View/TraceTimeline.cpp
+        src/View/TraceTimeline.h
+        src/View/TraceViewWindow.cpp
+        src/View/TraceViewWindow.h)
 
 set_target_properties(TraceViewer2 PROPERTIES
         MACOSX_BUNDLE TRUE

@@ -11,6 +11,7 @@
 #include <QActionGroup>
 #include <QFileSystemWatcher>
 #include <QMainWindow>
+#include <QTableView>
 #include <QTimer>
 #include <QTreeWidget>
 
@@ -22,6 +23,7 @@
 #include "CustomTraceDialog.h"
 #include "../Model/TraceHierarchyModel.h"
 #include "../Model/TraceHierarchyFilterProxy.h"
+#include "../Model/DisassemblyModel.h"
 
 class TraceViewWindow : public QMainWindow {
 Q_OBJECT
@@ -30,6 +32,9 @@ Q_OBJECT
   QTreeView *treeWidget = nullptr;
   TraceHierarchyModel *traceModel = nullptr;
   TraceHierarchyFilterProxy *traceFilter = nullptr;
+  QTableView *asmView = nullptr;
+  DisassemblyModel *asmModel = nullptr;
+
   FileLoader *fileLoader = nullptr;
   QThread *fileLoaderThread = nullptr;
   CustomTraceDialog *customTraceDialog = nullptr;
