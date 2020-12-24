@@ -285,7 +285,7 @@ static std::vector<uint8_t> find_build_id(Elf *elf) {
 }
 
 std::optional<std::pair<ConcreteFunctionInfo *, std::vector<InlinedFunctionInfo *>>>
-DwarfInfo::resolve_address(uint64_t address) {
+DwarfInfo::resolve_address(uint64_t address) const {
 
   auto func_it = std::lower_bound(functions.cbegin(), functions.cend(), address, [](const auto &func, const auto addr) {
     if (func->ranges.empty())
@@ -333,7 +333,30 @@ DwarfInfo::resolve_address(uint64_t address) {
   }
 }
 
-std::pair<QString, bool> DwarfInfo::symbolicate(uint64_t address) {
+std::optional<std::pair<QString, uint32_t>> DwarfInfo::getLineForAddress(uint64_t address) const {
+
+  auto func_it = std::lower_bound(lineTable.lines.cbegin(), lineTable.lines.cend(), address, [](const auto &func, const auto addr) {
+    return func.address < addr;
+  });
+
+  if (func_it == lineTable.lines.cend())
+    return {};
+
+  if ((func_it+1) != lineTable.lines.cend() && (func_it+1)->address == address) {
+    std::cout << "========\n";
+    auto func_it2 = func_it;
+    while (func_it2 != lineTable.lines.cend() && func_it2->address == address) {
+      std::cout << "line: " + lineTable.files.at(func_it2->fileIndex).name.toStdString() << " : " << std::dec
+                << (int) (func_it2->line) << std::endl;
+      ++func_it2;
+    }
+    std::cout << "========\n";
+  }
+
+  return std::make_pair(lineTable.files.at(func_it->fileIndex).name, func_it->line);
+}
+
+std::pair<QString, bool> DwarfInfo::symbolicate(uint64_t address) const {
   auto funcs = resolve_address(address);
   if (funcs) {
     auto &[main_func, inlines] = *funcs;
@@ -1047,7 +1070,7 @@ Result<DwarfInfo, QString> DwarfLoader::load() {
   }
 }
 
-uint64_t DwarfInfo::getBuildId() {
+uint64_t DwarfInfo::getBuildId() const {
   uint64_t num = 0;
   for (size_t i = 0; i < 8 && i < buildId.size(); i++) {
     num |= static_cast<uint64_t>(buildId[i]) << (i * 8);

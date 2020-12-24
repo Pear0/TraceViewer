@@ -6,8 +6,10 @@
 #include "../Disassembler/Disassembler.h"
 
 struct DisassemblyModel::RowInfo {
+  Disassembler::Instruction instruction;
   int samples;
-  QString instruction;
+  std::optional<int> jumpOffset;
+  std::optional<std::pair<QString, uint32_t>> sourceLine;
 };
 
 DisassemblyModel::DisassemblyModel(
@@ -40,12 +42,7 @@ void DisassemblyModel::disassembleRegion(uint64_t buildId, uint64_t startAddress
 
   auto segment = dis.disassemble(data.data(), data.size(), startAddress);
 
-  for (auto &row : segment.instructions) {
-    QString instr;
-    instr += row.mnemonic;
-    instr += " ";
-    instr += row.operands;
-
+  for (auto &&row : std::move(segment.instructions)) {
     int samples = 0;
     if (addrCounts) {
       if (auto it = addrCounts->find(row.address); it != addrCounts->end()) {
@@ -53,7 +50,14 @@ void DisassemblyModel::disassembleRegion(uint64_t buildId, uint64_t startAddress
       }
     }
 
-    rows.push_back(RowInfo { samples, std::move(instr) });
+    std::optional<int> jumpOffset;
+    if (row.jumpTarget && row.jumpTarget.value() >= startAddress && row.jumpTarget.value() < endAddress) {
+      jumpOffset = (int)(row.jumpTarget.value() - row.address);
+    }
+
+    auto sourceLine = debugFile->second.getLineForAddress(row.address);
+
+    rows.push_back(RowInfo { std::move(row), samples, jumpOffset, std::move(sourceLine) });
   }
 
   std::cout << "dis " << rows.size() << " instructions" << std::endl;
@@ -66,7 +70,7 @@ int DisassemblyModel::rowCount(const QModelIndex &parent) const {
 }
 
 int DisassemblyModel::columnCount(const QModelIndex &parent) const {
-  return 2;
+  return 3;
 }
 
 QVariant DisassemblyModel::headerData(int section, Qt::Orientation orientation, int role) const {
@@ -81,27 +85,62 @@ QVariant DisassemblyModel::headerData(int section, Qt::Orientation orientation, 
       return QString("Samples");
     case 1:
       return QString("Instruction");
+    case 2:
+      return QString("File");
     default:
       return QString("???");
   }
 }
 
 QVariant DisassemblyModel::data(const QModelIndex &index, int role) const {
-  if (role != Qt::DisplayRole)
-    return QVariant();
-
   switch (index.column()) {
     case 0: {
+      if (role != Qt::DisplayRole)
+        return QVariant();
+
       auto samples = rows.at(index.row()).samples;
       if (samples == 0)
         return QString("");
 
       return QString::number(samples);
     }
-    case 1:
-      return rows.at(index.row()).instruction;
-    default:
+    case 1: {
+      if (role != Qt::DisplayRole)
+        return QVariant();
+
+      auto &row = rows.at(index.row());
+
+      QString name = row.instruction.mnemonic + " " + row.instruction.operands;
+      if (row.jumpOffset) {
+        name += "    < ";
+        name += QString::number(row.jumpOffset.value());
+        name += " >";
+      }
+
+      return name;
+    }
+    case 2: {
+      auto &row = rows.at(index.row());
+      if (!row.sourceLine)
+        return QVariant();
+
+      if (role == Qt::DisplayRole) {
+        auto file = row.sourceLine->first.section('/', -1);
+        file += ":";
+        file += QString::number(row.sourceLine->second);
+        return file;
+      } else if (role == Qt::ToolTipRole) {
+        return row.sourceLine->first + ":" + QString::number(row.sourceLine->second);
+      } else {
+        return QVariant();
+      }
+    }
+    default: {
+      if (role != Qt::DisplayRole)
+        return QVariant();
+
       return QString("??? ") + QString::number(index.row());
+    }
   }
 }
 

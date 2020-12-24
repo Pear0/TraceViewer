@@ -20,6 +20,7 @@ public:
     uint64_t address;
     QString mnemonic;
     QString operands;
+    std::optional<uint64_t> jumpTarget;
   };
 
   struct Segment {

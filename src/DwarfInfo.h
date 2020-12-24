@@ -110,11 +110,13 @@ public:
 
   void readFromAddress(uint8_t *buffer, uint64_t address, size_t length);
 
-  std::optional<std::pair<ConcreteFunctionInfo *, std::vector<InlinedFunctionInfo *>>> resolve_address(uint64_t address);
+  std::optional<std::pair<ConcreteFunctionInfo *, std::vector<InlinedFunctionInfo *>>> resolve_address(uint64_t address) const;
 
-  std::pair<QString, bool> symbolicate(uint64_t address);
+  std::optional<std::pair<QString, uint32_t>> getLineForAddress(uint64_t address) const;
 
-  uint64_t getBuildId();
+  std::pair<QString, bool> symbolicate(uint64_t address) const;
+
+  uint64_t getBuildId() const;
 
 private:
 
