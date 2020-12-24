@@ -157,7 +157,7 @@ void TraceViewWindow::createMenus() {
   // reloadTraces() inspects the current ordering, so all we need is to trigger a reload.
   connect(traceOrderTopDownAct, &QAction::triggered, this, &TraceViewWindow::tracesTopDownTriggered);
   connect(traceOrderBottomUpAct, &QAction::triggered, this, &TraceViewWindow::tracesBottomUpTriggered);
-  connect(traceOrderTopFunctionsAct, &QAction::triggered, this, &TraceViewWindow::reloadTraces);
+  connect(traceOrderTopFunctionsAct, &QAction::triggered, this, &TraceViewWindow::tracesTopFunctionsTriggered);
   connect(traceShowInlinedFuncsAct, &QAction::triggered, this, &TraceViewWindow::showInlineFuncsTriggered);
 
   connect(customTraceWindowAct, &QAction::triggered, this, &TraceViewWindow::openCustomTraceDialog);
@@ -175,6 +175,10 @@ void TraceViewWindow::tracesBottomUpTriggered() {
 
 void TraceViewWindow::tracesTopDownTriggered() {
   traceModel->setViewPerspective(TraceHierarchyModel::ViewPerspective::TopDown);
+}
+
+void TraceViewWindow::tracesTopFunctionsTriggered() {
+  traceModel->setViewPerspective(TraceHierarchyModel::ViewPerspective::TopFunctions);
 }
 
 void TraceViewWindow::showInlineFuncsTriggered() {
@@ -250,6 +254,12 @@ void TraceViewWindow::traceSelectionChanged(const QModelIndex &current, const QM
     auto [start, end] = func2->ranges.front();
     asmModel->disassembleRegion(func2->buildId, start, end, &addrCounts);
     std::cout << "disassembled ranges" << std::endl;
+  }
+
+  if (auto *func2 = dynamic_cast<InlinedFunctionInfo *>(func); func2 != nullptr) {
+    std::cout << "concrete func ptr = 0x" << std::hex << (uintptr_t)(func2->getConcreteFunction()) << std::dec << std::endl;
+    std::cout << "die offset = 0x" << std::hex << (uintptr_t)(func2->getConcreteFunction()->die_offset) << std::dec << std::endl;
+    std::cout << "link name = " << (func2->getConcreteFunction()->linkageName).toStdString() << std::endl;
   }
 
 }

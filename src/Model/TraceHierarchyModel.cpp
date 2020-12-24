@@ -47,8 +47,21 @@ struct TraceHierarchyModel::HierarchyItem {
 
   HierarchyItem &operator=(HierarchyItem &&) = default;
 
+  [[nodiscard]] ConcreteFunctionInfo *getConcreteFunction() const {
+    return functionInfo ? functionInfo->getConcreteFunction() : nullptr;
+  }
+
   [[nodiscard]] bool targetMatch(const HierarchyItem *other) const {
-    return itemType == other->itemType && address == other->address && functionInfo == other->functionInfo;
+    if (itemType != other->itemType)
+      return false;
+    if (itemType == ItemType::Invalid)
+      return true;
+    if (itemType == ItemType::RawAddress)
+      return address == other->address;
+
+    auto &link = getConcreteFunction()->linkageName;
+    auto &otherLink = other->getConcreteFunction()->linkageName;
+    return link == otherLink;
   }
 
   [[nodiscard]] std::pair<ItemType, uint64_t> matchId() const {
@@ -149,6 +162,7 @@ void TraceHierarchyModel::updateModelTraces(ViewPerspective viewPerspective, boo
     symbolCache->lastTraceChangeCount = 0;
   }
 
+  std::vector<TraceFrame> frameCache;
   std::vector<HierarchyItem> currentHierarchyItems;
 
   for (auto &event : traceData->events) {
@@ -158,67 +172,85 @@ void TraceHierarchyModel::updateModelTraces(ViewPerspective viewPerspective, boo
 
     assert(event.change_index <= traceData->change_count && "event change index too high");
 
-    HierarchyItem *parent = &symbolCache->root;
+    const bool displayBottomUp = viewPerspective != ViewPerspective::TopDown;
 
-    // frames are bottom-up by default
-    iterateContainer(event.frames, viewPerspective != ViewPerspective::BottomUp, [&](auto &frame, bool hasMoreFrames) {
-      generateHierarchyItems(currentHierarchyItems, event, frame);
+    // isFirstItem is defined here so that only the bottom-most item is considered `self`
+    // even in TopFunctions mode.
+    bool isFirstItem = true;
 
-      iterateContainer(currentHierarchyItems, viewPerspective != ViewPerspective::TopDown, [&](auto &item, bool hasMoreItems) {
+    frameCache.clear();
+    // frames are bottom-up by default, flip to top down here...
+    std::copy(event.frames.crbegin(), event.frames.crend(), std::back_inserter(frameCache));
 
-        // Find an existing child that matches.
-        HierarchyItem *matchedItem = nullptr;
-        for (auto &child : parent->children) {
-          if (child->targetMatch(&item)) {
-            matchedItem = child.get();
-            break;
+    do {
+      HierarchyItem *parent = &symbolCache->root;
+
+      iterateContainer(frameCache, displayBottomUp, [&](auto &frame, bool hasMoreFrames) {
+        generateHierarchyItems(currentHierarchyItems, event, frame);
+
+        iterateContainer(currentHierarchyItems, displayBottomUp, [&](auto &item, bool hasMoreItems) {
+          bool isLastItem = !hasMoreFrames && !hasMoreItems;
+
+          // Find an existing child that matches.
+          HierarchyItem *matchedItem = nullptr;
+          for (auto &child : parent->children) {
+            if (child->targetMatch(&item)) {
+              matchedItem = child.get();
+              break;
+            }
           }
-        }
 
-        // No child matches, add it
-        if (matchedItem == nullptr) {
-          item.parent = parent;
-          auto index = item.selfIndex = parent->children.size();
+          // No child matches, add it
+          if (matchedItem == nullptr) {
+            item.parent = parent;
+            auto index = item.selfIndex = parent->children.size();
+
+            if (!needsReset) {
+              auto parentModelIndex = selfModelIndex(parent);
+              beginInsertRows(parentModelIndex, index, index);
+            }
+
+            auto itemPtr = std::make_unique<HierarchyItem>(std::move(item));
+            matchedItem = itemPtr.get();
+            parent->children.push_back(std::move(itemPtr));
+
+            if (!needsReset) {
+              endInsertRows();
+            }
+          }
+
+          matchedItem->count++;
+          matchedItem->addrCount[frame.pc]++;
 
           if (!needsReset) {
-            auto parentModelIndex = selfModelIndex(parent);
-            beginInsertRows(parentModelIndex, index, index);
-          }
-
-          auto itemPtr = std::make_unique<HierarchyItem>(std::move(item));
-          matchedItem = itemPtr.get();
-          parent->children.push_back(std::move(itemPtr));
-
-          if (!needsReset) {
-            endInsertRows();
-          }
-        }
-
-        matchedItem->count++;
-        matchedItem->addrCount[frame.pc]++;
-
-        if (!needsReset) {
-          // Update the count column
-          auto itemIndex = selfModelIndex(matchedItem, 1);
-          dataChanged(itemIndex, itemIndex);
-        }
-
-        if (!hasMoreFrames && !hasMoreItems) {
-          // contribute to self count
-
-          matchedItem->selfCount++;
-
-          if (!needsReset) {
-            auto itemIndex = selfModelIndex(matchedItem, 2);
+            // Update the count column
+            auto itemIndex = selfModelIndex(matchedItem, 1);
             dataChanged(itemIndex, itemIndex);
           }
-        }
 
-        // follow the chain...
-        parent = matchedItem;
+          bool doSelfCount = viewPerspective == ViewPerspective::TopDown ? isLastItem : isFirstItem;
+          if (doSelfCount) {
+            // contribute to self count
 
+            matchedItem->selfCount++;
+
+            if (!needsReset) {
+              auto itemIndex = selfModelIndex(matchedItem, 2);
+              dataChanged(itemIndex, itemIndex);
+            }
+          }
+
+          // follow the chain...
+          parent = matchedItem;
+          isFirstItem = false;
+        });
       });
-    });
+
+      // remove bottom most function in case we are in top functions
+      if (!frameCache.empty())
+        frameCache.pop_back();
+
+    } while (viewPerspective == ViewPerspective::TopFunctions && !frameCache.empty());
   }
 
   symbolCache->lastTraceChangeCount = traceData->change_count;

@@ -162,7 +162,7 @@ void InlinedFunctionInfo::dump() {
   }
 }
 
-QString InlinedFunctionInfo::getFullName() {
+QString InlinedFunctionInfo::getFullName() const {
   return origin_fn->getFullName();
 }
 
@@ -714,6 +714,8 @@ static Result<std::vector<std::unique_ptr<ConcreteFunctionInfo>>, QString> scan_
         std::cout << " [";
       }
 
+      char *attr_linkage_name = nullptr;
+
       res = forEachAttribute(debug_info, die, &err, [&](auto i, Dwarf_Attribute attr) {
         if (dump_tags) {
           if (i > 0)
@@ -730,6 +732,10 @@ static Result<std::vector<std::unique_ptr<ConcreteFunctionInfo>>, QString> scan_
           dwarf_get_AT_name(at_code, &at_name);
 
           std::cout << at_name;
+        }
+
+        if (at_code == DW_AT_linkage_name) {
+          dwarf_formstring(attr, &attr_linkage_name, &err);
         }
       });
       assert(res == DW_DLV_OK);
@@ -777,6 +783,8 @@ static Result<std::vector<std::unique_ptr<ConcreteFunctionInfo>>, QString> scan_
           function->name = die_info.name;
           function->die_offset = die_info.die_offset;
           function->full_name = full_name;
+          if (attr_linkage_name)
+            function->linkageName = QString(attr_linkage_name);
           function->ranges = ranges;
 
           die_info.function = function.get();

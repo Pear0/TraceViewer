@@ -73,6 +73,8 @@ private slots:
 
   void tracesTopDownTriggered();
 
+  void tracesTopFunctionsTriggered();
+
   void showInlineFuncsTriggered();
 
   void fileLoaded(QString path);

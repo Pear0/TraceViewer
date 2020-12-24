@@ -22,9 +22,11 @@ struct InlinedFunctionInfo;
 struct DwarfLoader;
 
 struct AbstractFunctionInfo {
-  virtual bool isInline() = 0;
+  [[nodiscard]] virtual bool isInline() const = 0;
 
-  virtual QString getFullName() = 0;
+  [[nodiscard]] virtual QString getFullName() const = 0;
+
+  [[nodiscard]] virtual ConcreteFunctionInfo *getConcreteFunction() = 0;
 };
 
 struct InlinedFunctionInfo : public AbstractFunctionInfo {
@@ -40,17 +42,22 @@ struct InlinedFunctionInfo : public AbstractFunctionInfo {
 
   void dump();
 
-  bool isInline() override {
+  [[nodiscard]] bool isInline() const override {
     return true;
   }
 
-  QString getFullName() override;
+  [[nodiscard]] QString getFullName() const override;
+
+  ConcreteFunctionInfo *getConcreteFunction() override {
+    return origin_fn;
+  }
 };
 
 struct ConcreteFunctionInfo : public AbstractFunctionInfo {
   Dwarf_Off die_offset = 0;
   const char *name = nullptr;
   QString full_name;
+  QString linkageName;
   uint64_t buildId = 0;
 
   std::vector<std::unique_ptr<InlinedFunctionInfo>> inline_functions;
@@ -59,12 +66,16 @@ struct ConcreteFunctionInfo : public AbstractFunctionInfo {
 
   void dump();
 
-  bool isInline() override {
+  [[nodiscard]] bool isInline() const override {
     return false;
   }
 
-  QString getFullName() override {
+  [[nodiscard]] QString getFullName() const override {
     return full_name;
+  }
+
+  ConcreteFunctionInfo *getConcreteFunction() override {
+    return this;
   }
 };
 
