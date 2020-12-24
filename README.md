@@ -5,6 +5,8 @@ the traces in a standard "profiling tools" interface.
 
 This project only supports Aarch64 right now but is mostly platform agnostic.
 
+![screenshot](.github/trace_viewer1.png)
+
 ## Build
 
 The project requires Qt5, zlib, dwarf, elf, capstone, and capnproto.
