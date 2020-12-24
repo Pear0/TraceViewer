@@ -12,7 +12,7 @@
 #
 #  LIBCAPSTONE_ROOT - Preferred installation prefix
 #
-#  Copyright (c) 2008 Bernhard Walle <bernhard.walle@gmx.de>
+#  Copyright (c) 2020 Will Gulian <williamgulian@gmail.com>
 #
 #  Redistribution and use is allowed according to the terms of the New
 #  BSD license.
