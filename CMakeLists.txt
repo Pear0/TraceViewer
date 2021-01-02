@@ -67,6 +67,7 @@ set_target_properties(TraceViewer2 PROPERTIES
         MACOSX_BUNDLE TRUE
         MACOSX_BUNDLE_BUNDLE_NAME "Trace Viewer"
         MACOSX_BUNDLE_GUI_IDENTIFIER com.pear0.traceviewer
+        MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/resources/Info.plist"
         )
 
 target_include_directories(TraceViewer2 PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
