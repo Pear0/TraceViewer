@@ -67,15 +67,23 @@ Disassembler::Segment Disassembler::disassemble(const uint8_t *data, size_t data
     instr.operands = QString((char *) insn.op_str);
 
     if (insn.detail) {
-
-      for (size_t k = 0; k < insn.detail->arm64.op_count; k++) {
-        auto &op = insn.detail->arm64.operands[k];
-
-        if (op.type == ARM64_OP_IMM) {
-          instr.jumpTarget = static_cast<uint64_t>(op.imm);
+      bool isJump = false;
+      for (int k = 0; k < insn.detail->groups_count; k++) {
+        auto group = insn.detail->groups[k];
+        if (group == CS_GRP_JUMP || group == CS_GRP_CALL || group == CS_GRP_BRANCH_RELATIVE) {
+          isJump = true;
         }
       }
 
+      if (isJump) {
+        for (size_t k = 0; k < insn.detail->arm64.op_count; k++) {
+          auto &op = insn.detail->arm64.operands[k];
+
+          if (op.type == ARM64_OP_IMM) {
+            instr.jumpTarget = static_cast<uint64_t>(op.imm);
+          }
+        }
+      }
     } else {
       std::cout << "no insn detail\n";
     }

@@ -27,6 +27,8 @@ struct AbstractFunctionInfo {
   [[nodiscard]] virtual QString getFullName() const = 0;
 
   [[nodiscard]] virtual ConcreteFunctionInfo *getConcreteFunction() = 0;
+
+  [[nodiscard]] virtual bool containsAddress(uint64_t address) const = 0;
 };
 
 struct InlinedFunctionInfo : public AbstractFunctionInfo {
@@ -40,6 +42,8 @@ struct InlinedFunctionInfo : public AbstractFunctionInfo {
 
   std::vector<std::pair<uint64_t, uint64_t>> ranges;
 
+  std::optional<std::pair<QString, uint32_t>> sourceLine;
+
   void dump();
 
   [[nodiscard]] bool isInline() const override {
@@ -51,6 +55,8 @@ struct InlinedFunctionInfo : public AbstractFunctionInfo {
   ConcreteFunctionInfo *getConcreteFunction() override {
     return origin_fn;
   }
+
+  [[nodiscard]] bool containsAddress(uint64_t address) const override;
 };
 
 struct ConcreteFunctionInfo : public AbstractFunctionInfo {
@@ -77,6 +83,8 @@ struct ConcreteFunctionInfo : public AbstractFunctionInfo {
   ConcreteFunctionInfo *getConcreteFunction() override {
     return this;
   }
+
+  [[nodiscard]] bool containsAddress(uint64_t address) const override;
 };
 
 class DwarfInfo {
@@ -85,6 +93,8 @@ class DwarfInfo {
 
 public:
   struct LineFileInfo {
+    int cu_index;
+    Dwarf_Signed file_index;
     QString name;
     Dwarf_Unsigned length { 0 };
   };

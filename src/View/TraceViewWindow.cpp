@@ -47,18 +47,18 @@ TraceViewWindow::TraceViewWindow(std::shared_ptr<TraceData> trace_data,
   }
 
   {
-    asmView = new QTableView(this);
+    asmView = new QTreeView(this);
 
-    asmModel = new DisassemblyModel(this->trace_data, this->debugTable, this);
+    asmModel = new DisassemblyInlinesModel(this->trace_data, this->debugTable, this);
 
     asmView->setModel(asmModel);
 
-    asmView->verticalHeader()->hide();
-    asmView->verticalHeader()->setDefaultSectionSize(asmView->verticalHeader()->fontMetrics().height());
-    asmView->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeMode::Fixed);
-    asmView->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeMode::Stretch);
-    asmView->setSelectionBehavior(QAbstractItemView::SelectRows);
-    asmView->setShowGrid(false);
+    asmView->setUniformRowHeights(true);
+    asmView->header()->setStretchLastSection(false);
+    asmView->header()->setSectionResizeMode(0, QHeaderView::Stretch);
+
+    // Logically the name column is first, but move it visually to the right side.
+    asmView->header()->moveSection(0, 1);
   }
 
   fileLoaderThread = new QThread(this);
@@ -69,6 +69,8 @@ TraceViewWindow::TraceViewWindow(std::shared_ptr<TraceData> trace_data,
   fileLoader->moveToThread(fileLoaderThread);
 
   connect(treeWidget->selectionModel(), &QItemSelectionModel::currentChanged, this, &TraceViewWindow::traceSelectionChanged);
+
+  connect(asmModel, &DisassemblyInlinesModel::modelReset, this, &TraceViewWindow::asmDataLoaded);
 
   connect(fileWatcher, &QFileSystemWatcher::fileChanged, this, &TraceViewWindow::onFileChanged);
   connect(fileWatcher, &QFileSystemWatcher::fileChanged, fileLoader, &FileLoader::loadFile);
@@ -251,8 +253,7 @@ void TraceViewWindow::traceSelectionChanged(const QModelIndex &current, const QM
 
     auto addrCounts = traceModel->getAddrCounts(sourceIndex);
 
-    auto [start, end] = func2->ranges.front();
-    asmModel->disassembleRegion(func2->buildId, start, end, &addrCounts);
+    asmModel->disassembleRegion(*func2, &addrCounts);
     std::cout << "disassembled ranges" << std::endl;
   }
 
@@ -264,5 +265,7 @@ void TraceViewWindow::traceSelectionChanged(const QModelIndex &current, const QM
 
 }
 
-
+void TraceViewWindow::asmDataLoaded() {
+  asmView->expandAll();
+}
 

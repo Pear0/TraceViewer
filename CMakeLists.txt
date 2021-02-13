@@ -61,7 +61,9 @@ add_executable(TraceViewer2 ${CAPNP_SRCS}
         src/View/TraceTimeline.cpp
         src/View/TraceTimeline.h
         src/View/TraceViewWindow.cpp
-        src/View/TraceViewWindow.h)
+        src/View/TraceViewWindow.h
+        src/Model/DisassemblyInlinesModel.cpp
+        src/Model/DisassemblyInlinesModel.h)
 
 set_target_properties(TraceViewer2 PROPERTIES
         MACOSX_BUNDLE TRUE

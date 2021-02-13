@@ -24,6 +24,7 @@
 #include "../Model/TraceHierarchyModel.h"
 #include "../Model/TraceHierarchyFilterProxy.h"
 #include "../Model/DisassemblyModel.h"
+#include "../Model/DisassemblyInlinesModel.h"
 
 class TraceViewWindow : public QMainWindow {
 Q_OBJECT
@@ -32,8 +33,8 @@ Q_OBJECT
   QTreeView *treeWidget = nullptr;
   TraceHierarchyModel *traceModel = nullptr;
   TraceHierarchyFilterProxy *traceFilter = nullptr;
-  QTableView *asmView = nullptr;
-  DisassemblyModel *asmModel = nullptr;
+  QTreeView *asmView = nullptr;
+  DisassemblyInlinesModel *asmModel = nullptr;
 
   FileLoader *fileLoader = nullptr;
   QThread *fileLoaderThread = nullptr;
@@ -86,6 +87,8 @@ private slots:
   void openImportTracesDialog();
 
   void traceSelectionChanged(const QModelIndex &current, const QModelIndex &previous);
+
+  void asmDataLoaded();
 
 private:
   void createMenus();

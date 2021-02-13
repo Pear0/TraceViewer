@@ -166,6 +166,10 @@ QString InlinedFunctionInfo::getFullName() const {
   return origin_fn->getFullName();
 }
 
+bool InlinedFunctionInfo::containsAddress(uint64_t address) const {
+  return ranges_contains_address(ranges, address);
+}
+
 void ConcreteFunctionInfo::dump() {
   std::cout << full_name.toStdString() << "\n";
 
@@ -181,6 +185,10 @@ void ConcreteFunctionInfo::dump() {
       i->dump();
     }
   }
+}
+
+bool ConcreteFunctionInfo::containsAddress(uint64_t address) const {
+  return ranges_contains_address(ranges, address);
 }
 
 struct DwarfInfo::Internal {
@@ -393,7 +401,7 @@ struct DieWalkInfo {
 
 template<typename Func>
 static Result<int, QString>
-doThing(Dwarf_Debug debugInfo, DieWalkInfo &info, Dwarf_Die die, Func func, int level = 0, int sibling_index = 0) {
+walkDebugInfo(Dwarf_Debug debugInfo, DieWalkInfo &info, Dwarf_Die die, Func func, int level = 0, int sibling_index = 0) {
   info.level = level;
   info.sibling_index = sibling_index;
   func(info, die, false);
@@ -403,7 +411,7 @@ doThing(Dwarf_Debug debugInfo, DieWalkInfo &info, Dwarf_Die die, Func func, int 
   int res = dwarf_child(die, &child_die, &error);
   TRY_ERROR(int, debugInfo, res, error);
   if (res == DW_DLV_OK) {
-    auto result = doThing(debugInfo, info, child_die, func, level + 1, 0);
+    auto result = walkDebugInfo(debugInfo, info, child_die, func, level + 1, 0);
 
     dwarf_dealloc_die(child_die);
     child_die = nullptr;
@@ -434,7 +442,7 @@ doThing(Dwarf_Debug debugInfo, DieWalkInfo &info, Dwarf_Die die, Func func, int 
       die = next_die;
       our_die = true;
 
-      auto result = doThing(debugInfo, info, die, func, level, i);
+      auto result = walkDebugInfo(debugInfo, info, die, func, level, i);
 
       if (!result.is_ok()) {
         return std::move(result);
@@ -538,7 +546,7 @@ build_ranges(Dwarf_Debug debug_info, CompilationUnitInfo &cu_info, Dwarf_Die die
   }
 }
 
-static Result<std::vector<std::unique_ptr<ConcreteFunctionInfo>>, QString> scan_debug_info(Dwarf_Debug debug_info) {
+static Result<std::vector<std::unique_ptr<ConcreteFunctionInfo>>, QString> scan_debug_info(Dwarf_Debug debug_info, DwarfInfo::LineTable &lineTable) {
   CompilationUnitHeader header{};
   bool is_info = true;
   constexpr auto dump_tags = false;
@@ -606,7 +614,7 @@ static Result<std::vector<std::unique_ptr<ConcreteFunctionInfo>>, QString> scan_
     walkInfo.is_info = is_info;
 
     if (dump_tags) {
-      doThing(debug_info, walkInfo, cu_die, [&](DieWalkInfo &info, Dwarf_Die die, bool is_exit) {
+      walkDebugInfo(debug_info, walkInfo, cu_die, [&](DieWalkInfo &info, Dwarf_Die die, bool is_exit) {
         Dwarf_Error err;
 
         Dwarf_Off offset;
@@ -667,7 +675,7 @@ static Result<std::vector<std::unique_ptr<ConcreteFunctionInfo>>, QString> scan_
       });
     }
 
-    doThing(debug_info, walkInfo, cu_die, [&](DieWalkInfo &info, Dwarf_Die die, bool is_exit) {
+    walkDebugInfo(debug_info, walkInfo, cu_die, [&](DieWalkInfo &info, Dwarf_Die die, bool is_exit) {
       Dwarf_Error err;
 
       Dwarf_Off offset;
@@ -715,6 +723,8 @@ static Result<std::vector<std::unique_ptr<ConcreteFunctionInfo>>, QString> scan_
       }
 
       char *attr_linkage_name = nullptr;
+      Dwarf_Unsigned file_index = 0;
+      Dwarf_Unsigned file_line = 0; // optional not needed because 0 is the non-existent state.
 
       res = forEachAttribute(debug_info, die, &err, [&](auto i, Dwarf_Attribute attr) {
         if (dump_tags) {
@@ -734,8 +744,18 @@ static Result<std::vector<std::unique_ptr<ConcreteFunctionInfo>>, QString> scan_
           std::cout << at_name;
         }
 
-        if (at_code == DW_AT_linkage_name) {
-          dwarf_formstring(attr, &attr_linkage_name, &err);
+        switch(at_code) {
+          case DW_AT_linkage_name:
+            dwarf_formstring(attr, &attr_linkage_name, &err);
+            break;
+          case DW_AT_call_file:
+            dwarf_formudata(attr, &file_index, &err);
+            break;
+          case DW_AT_call_line:
+            dwarf_formudata(attr, &file_line, &err);
+            break;
+          default:
+            break;
         }
       });
       assert(res == DW_DLV_OK);
@@ -813,6 +833,18 @@ static Result<std::vector<std::unique_ptr<ConcreteFunctionInfo>>, QString> scan_
           function->depth = depth;
           function->origin_offset = ab_offset;
           function->ranges = ranges;
+
+
+          QString fileName("");
+          if (file_index != 0) {
+            for (auto &file : lineTable.files) {
+              if (file.cu_index == cu_index && file.file_index == static_cast<Dwarf_Signed>(file_index)) {
+                fileName = file.name;
+                break;
+              }
+            }
+          }
+          function->sourceLine = std::make_pair(std::move(fileName), static_cast<uint32_t>(file_line));
 
           die_info.inlined_function = function.get();
 
@@ -936,7 +968,7 @@ static Result<DwarfInfo::LineTable, QString> generate_line_table(Dwarf_Debug deb
       char *name = srcFiles[j];
       // std::cout << "file: " << name << std::endl;
 
-      lineTable.files.push_back(DwarfInfo::LineFileInfo{QString(name), 0});
+      lineTable.files.push_back(DwarfInfo::LineFileInfo{cu_index, j + 1, QString(name), 0});
 
       dwarf_dealloc(debug_info, name, DW_DLA_STRING);
     }
@@ -1038,14 +1070,14 @@ Result<DwarfInfo, QString> DwarfLoader::load() {
   switch (dwarf_err) {
     case DW_DLV_OK: {
 
-      auto functions = scan_debug_info(debug_info);
-      if (functions.is_error()) {
-        return Result<DwarfInfo, QString>::with_error(std::move(functions).into_error());
-      }
-
       auto lineTable = generate_line_table(debug_info);
       if (lineTable.is_error()) {
         return Result<DwarfInfo, QString>::with_error(std::move(lineTable).into_error());
+      }
+
+      auto functions = scan_debug_info(debug_info, lineTable.as_value());
+      if (functions.is_error()) {
+        return Result<DwarfInfo, QString>::with_error(std::move(functions).into_error());
       }
 
       DwarfInfo info(std::move(file), std::move(buildId), std::move(functions).into_value(),
